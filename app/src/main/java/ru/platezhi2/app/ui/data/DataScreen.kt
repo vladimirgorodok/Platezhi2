@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -63,6 +64,7 @@ fun DataScreen(
     val message by viewModel.message.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val cloudFolder by viewModel.cloudFolderUri.collectAsState()
+    val backups by viewModel.backups.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingImport by remember { mutableStateOf<Uri?>(null) }
 
@@ -194,8 +196,53 @@ fun DataScreen(
                 }
             }
 
+            InfoCard(
+                title = "Импорт из облака",
+                subtitle = if (cloudFolder == null) {
+                    "Сначала выберите облачную папку с резервными копиями"
+                } else {
+                    "Выберите резервную копию из облачной папки"
+                },
+                icon = Icons.Filled.Download,
+            ) {
+                Button(
+                    onClick = { viewModel.loadBackups() },
+                    enabled = !busy && cloudFolder != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Показать копии") }
+            }
+
             Spacer(Modifier.height(20.dp))
         }
+    }
+
+    if (backups.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissBackups() },
+            title = { Text("Резервные копии") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    backups.forEach { backup ->
+                        TextButton(
+                            onClick = {
+                                viewModel.dismissBackups()
+                                pendingImport = backup.uri
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(backup.name, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissBackups() }) { Text("Отмена") }
+            },
+        )
     }
 
     pendingImport?.let { uri ->

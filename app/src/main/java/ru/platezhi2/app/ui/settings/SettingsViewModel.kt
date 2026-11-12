@@ -32,7 +32,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun rescheduleAllReminders() {
         viewModelScope.launch {
-            Reminders.rescheduleAll(container.appContext, container.paymentRepository.getAll())
+            Reminders.rescheduleAll(
+                container.appContext,
+                container.paymentRepository.getCards(),
+                container.paymentRepository.getPayments(),
+            )
         }
     }
 }

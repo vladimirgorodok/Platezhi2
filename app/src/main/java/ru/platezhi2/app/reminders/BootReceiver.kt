@@ -17,7 +17,11 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Reminders.rescheduleAll(context, app.container.paymentRepository.getAll())
+                Reminders.rescheduleAll(
+                    context,
+                    app.container.paymentRepository.getCards(),
+                    app.container.paymentRepository.getPayments(),
+                )
             } finally {
                 pending.finish()
             }

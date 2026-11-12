@@ -11,29 +11,34 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.platezhi2.app.core.AppContainer
+import ru.platezhi2.app.core.DueDates
 import ru.platezhi2.app.core.Format
+import ru.platezhi2.app.data.model.AppIcons
+import ru.platezhi2.app.data.model.Card
 import ru.platezhi2.app.data.model.Payment
 import ru.platezhi2.app.data.model.Recurrence
 import ru.platezhi2.app.reminders.Reminders
+import java.time.LocalDate
 
 data class EditState(
     val id: Long = 0L,
     val title: String = "",
     val amountText: String = "",
-    val dueDateEpochDay: Long = Format.todayEpochDay(),
-    val recurrence: Recurrence = Recurrence.NONE,
-    val category: String = "other",
-    val logoPath: String? = null,
+    val dueDay: Int = LocalDate.now().dayOfMonth,
+    val dueMonth: Int = LocalDate.now().monthValue,
+    val recurrence: Recurrence = Recurrence.MONTHLY,
+    val icon: String = AppIcons.DEFAULT,
+    val imagePath: String? = null,
     val note: String = "",
-    val paid: Boolean = false,
     val reminderEnabled: Boolean = false,
     val reminderDaysBefore: Int = 1,
     val reminderHour: Int = 9,
     val reminderMinute: Int = 0,
     val createdAt: Long = 0L,
     val loaded: Boolean = false,
-    val logoBusy: Boolean = false,
-    val logoMessage: String? = null,
+    val iconBusy: Boolean = false,
+    val iconMessage: String? = null,
+    val payments: List<Payment> = emptyList(),
 )
 
 class PaymentEditViewModel(
@@ -41,18 +46,19 @@ class PaymentEditViewModel(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val paymentId: Long = savedStateHandle.get<Long>("id") ?: 0L
-    val isNew: Boolean get() = paymentId == 0L
+    private val cardId: Long = savedStateHandle.get<Long>("id") ?: 0L
+    val isNew: Boolean get() = cardId == 0L
 
-    private val _state = MutableStateFlow(EditState(id = paymentId))
+    private val _state = MutableStateFlow(EditState(id = cardId))
     val state: StateFlow<EditState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
             val defaultDays = container.settingsRepository.settings.first().defaultReminderDaysBefore
-            val existing = if (paymentId != 0L) container.paymentRepository.get(paymentId) else null
+            val existing = if (cardId != 0L) container.paymentRepository.getCard(cardId) else null
+            val history = if (cardId != 0L) container.paymentRepository.getPaymentsFor(cardId) else emptyList()
             _state.update { current ->
-                if (existing != null) current.fromPayment(existing)
+                if (existing != null) current.fromCard(existing).copy(payments = history)
                 else current.copy(reminderDaysBefore = defaultDays, loaded = true)
             }
         }
@@ -61,81 +67,76 @@ class PaymentEditViewModel(
     fun setTitle(value: String) = _state.update { it.copy(title = value) }
     fun setAmount(value: String) = _state.update { it.copy(amountText = value) }
     fun setNote(value: String) = _state.update { it.copy(note = value) }
-    fun setCategory(key: String) = _state.update { it.copy(category = key) }
+    fun setIcon(value: String) = _state.update { it.copy(icon = value, imagePath = null, iconMessage = null) }
     fun setRecurrence(value: Recurrence) = _state.update { it.copy(recurrence = value) }
-    fun setPaid(value: Boolean) = _state.update { it.copy(paid = value) }
-    fun setDueDate(epochDay: Long) = _state.update { it.copy(dueDateEpochDay = epochDay) }
+    fun setDueDay(value: Int) = _state.update { it.copy(dueDay = value.coerceIn(1, 31)) }
+    fun setDueMonth(value: Int) = _state.update { it.copy(dueMonth = value.coerceIn(1, 12)) }
     fun setReminderEnabled(value: Boolean) = _state.update { it.copy(reminderEnabled = value) }
     fun setReminderDays(days: Int) = _state.update { it.copy(reminderDaysBefore = days.coerceIn(0, 60)) }
     fun setReminderTime(hour: Int, minute: Int) =
         _state.update { it.copy(reminderHour = hour, reminderMinute = minute) }
 
-    fun clearLogo() = _state.update { it.copy(logoPath = null, logoMessage = null) }
+    fun clearImage() = _state.update { it.copy(imagePath = null, iconMessage = null) }
 
-    fun importLogo(uri: Uri) {
+    fun importIcon(uri: Uri) {
         viewModelScope.launch {
-            _state.update { it.copy(logoBusy = true, logoMessage = null) }
-            val path = container.logoRepository.importImage(uri)
+            _state.update { it.copy(iconBusy = true, iconMessage = null) }
+            val path = container.imageStore.importImage(uri)
             _state.update {
                 it.copy(
-                    logoBusy = false,
-                    logoPath = path ?: it.logoPath,
-                    logoMessage = if (path == null) "Не удалось загрузить изображение" else "Логотип обновлён",
+                    iconBusy = false,
+                    imagePath = path ?: it.imagePath,
+                    iconMessage = if (path == null) "Не удалось загрузить изображение" else "Иконка обновлена",
                 )
             }
         }
     }
 
-    /** Ищет логотип в интернете; при неудаче подставляет монограмму. */
-    fun searchLogo() {
-        val name = _state.value.title.trim()
-        if (name.isEmpty()) {
-            _state.update { it.copy(logoMessage = "Сначала введите название платежа") }
-            return
-        }
+    // ---- Оплаты ----
+
+    fun addPayment(amountMinor: Long, paidAtEpochDay: Long) {
+        val s = _state.value
+        if (s.id == 0L) return
+        val card = s.toCard()
+        val paidAt = LocalDate.ofEpochDay(paidAtEpochDay)
+        val period = DueDates.periodForPaidDate(card, paidAt).toEpochDay()
         viewModelScope.launch {
-            _state.update { it.copy(logoBusy = true, logoMessage = "Ищу логотип…") }
-            val online = container.logoRepository.searchOnline(name)
-            if (online != null) {
-                _state.update { it.copy(logoBusy = false, logoPath = online, logoMessage = "Логотип найден") }
-            } else {
-                val monogram = container.logoRepository.monogram(name)
-                _state.update {
-                    it.copy(
-                        logoBusy = false,
-                        logoPath = monogram,
-                        logoMessage = "Логотип не найден — добавлена монограмма",
-                    )
-                }
-            }
+            container.paymentRepository.addPayment(
+                Payment(
+                    cardId = s.id,
+                    periodEpochDay = period,
+                    paidAtEpochDay = paidAtEpochDay,
+                    amountMinor = amountMinor,
+                )
+            )
+            reloadPayments()
         }
     }
 
+    fun deletePayment(payment: Payment) {
+        viewModelScope.launch {
+            container.paymentRepository.deletePayment(payment)
+            reloadPayments()
+        }
+    }
+
+    private suspend fun reloadPayments() {
+        val id = _state.value.id
+        val history = container.paymentRepository.getPaymentsFor(id)
+        _state.update { it.copy(payments = history) }
+    }
+
+    // ---- Сохранение ----
+
     fun save(onDone: () -> Unit) {
         val s = _state.value
-        val amountMinor = Format.parseAmountToMinor(s.amountText) ?: 0L
-        val payment = Payment(
-            id = s.id,
-            title = s.title.trim().ifBlank { "Без названия" },
-            amountMinor = amountMinor,
-            currency = "RUB",
-            dueDateEpochDay = s.dueDateEpochDay,
-            recurrence = s.recurrence,
-            category = s.category,
-            logoPath = s.logoPath,
-            note = s.note.trim(),
-            paid = s.paid,
-            reminderEnabled = s.reminderEnabled,
-            reminderDaysBefore = s.reminderDaysBefore,
-            reminderHour = s.reminderHour,
-            reminderMinute = s.reminderMinute,
-            createdAt = s.createdAt,
-        )
+        val card = s.toCard()
         viewModelScope.launch {
-            val newId = container.paymentRepository.save(payment)
-            val saved = payment.copy(id = if (newId != 0L) newId else s.id)
-            if (saved.reminderEnabled && !saved.paid) {
-                Reminders.schedule(container.appContext, saved)
+            val newId = container.paymentRepository.saveCard(card)
+            val saved = card.copy(id = if (newId != 0L) newId else s.id)
+            val history = if (saved.id != 0L) container.paymentRepository.getPaymentsFor(saved.id) else emptyList()
+            if (saved.reminderEnabled) {
+                Reminders.schedule(container.appContext, saved, history)
             } else {
                 Reminders.cancel(container.appContext, saved)
             }
@@ -150,37 +151,47 @@ class PaymentEditViewModel(
             return
         }
         viewModelScope.launch {
-            val payment = container.paymentRepository.get(id)
-            if (payment != null) {
-                Reminders.cancel(container.appContext, payment)
-                container.paymentRepository.delete(payment)
+            val card = container.paymentRepository.getCard(id)
+            if (card != null) {
+                Reminders.cancel(container.appContext, card)
+                container.paymentRepository.deleteCard(card)
             }
             onDone()
         }
     }
 
-    private fun EditState.fromPayment(p: Payment): EditState = copy(
-        id = p.id,
-        title = p.title,
-        amountText = amountToText(p.amountMinor),
-        dueDateEpochDay = p.dueDateEpochDay,
-        recurrence = p.recurrence,
-        category = p.category,
-        logoPath = p.logoPath,
-        note = p.note,
-        paid = p.paid,
-        reminderEnabled = p.reminderEnabled,
-        reminderDaysBefore = p.reminderDaysBefore,
-        reminderHour = p.reminderHour,
-        reminderMinute = p.reminderMinute,
-        createdAt = p.createdAt,
-        loaded = true,
+    private fun EditState.toCard(): Card = Card(
+        id = id,
+        title = title.trim().ifBlank { "Без названия" },
+        amountMinor = Format.parseAmountToMinor(amountText) ?: 0L,
+        dueDay = dueDay,
+        dueMonth = dueMonth,
+        recurrence = recurrence,
+        icon = AppIcons.normalize(icon),
+        imagePath = imagePath,
+        note = note.trim(),
+        reminderEnabled = reminderEnabled,
+        reminderDaysBefore = reminderDaysBefore,
+        reminderHour = reminderHour,
+        reminderMinute = reminderMinute,
+        createdAt = createdAt,
     )
 
-    private fun amountToText(minor: Long): String {
-        if (minor == 0L) return ""
-        val rub = minor / 100
-        val kop = minor % 100
-        return if (kop == 0L) rub.toString() else "$rub,${kop.toString().padStart(2, '0')}"
-    }
+    private fun EditState.fromCard(card: Card): EditState = copy(
+        id = card.id,
+        title = card.title,
+        amountText = Format.amountInput(card.amountMinor),
+        dueDay = card.dueDay,
+        dueMonth = card.dueMonth,
+        recurrence = card.recurrence,
+        icon = card.icon,
+        imagePath = card.imagePath,
+        note = card.note,
+        reminderEnabled = card.reminderEnabled,
+        reminderDaysBefore = card.reminderDaysBefore,
+        reminderHour = card.reminderHour,
+        reminderMinute = card.reminderMinute,
+        createdAt = card.createdAt,
+        loaded = true,
+    )
 }
