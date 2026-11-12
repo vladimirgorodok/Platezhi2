@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Платежи 2.0</string>
+    <string name="notif_channel_reminders">Напоминания о платежах</string>
+    <string name="notif_channel_reminders_desc">Уведомления о предстоящих и просроченных платежах</string>
+</resources>
