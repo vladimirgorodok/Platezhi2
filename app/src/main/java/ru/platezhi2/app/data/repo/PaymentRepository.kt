@@ -36,7 +36,11 @@ class PaymentRepository(
             createdAt = if (card.createdAt == 0L) now else card.createdAt,
             updatedAt = now,
         )
-        return cardDao.upsert(normalized.toEntity())
+        val entity = normalized.toEntity()
+        // Существующую карточку меняем через UPDATE. Замена строки
+        // (`INSERT OR REPLACE`) каскадно удалила бы все её оплаты.
+        if (card.id != 0L && cardDao.update(entity) > 0) return card.id
+        return cardDao.insert(entity.copy(id = 0L))
     }
 
     suspend fun deleteCard(card: Card) {

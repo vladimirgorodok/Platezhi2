@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -19,10 +20,20 @@ interface CardDao {
     @Query("SELECT * FROM cards ORDER BY id ASC")
     suspend fun getAll(): List<CardEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(entity: CardEntity): Long
+    /**
+     * Вставка новой карточки.
+     *
+     * ВАЖНО: только ABORT/IGNORE, но не REPLACE. `INSERT OR REPLACE` при
+     * совпадении ключа удаляет старую строку, а вместе с ней по
+     * `ON DELETE CASCADE` пропадают все оплаты этой карточки.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: CardEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Update
+    suspend fun update(entity: CardEntity): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(items: List<CardEntity>): List<Long>
 
     @Delete
