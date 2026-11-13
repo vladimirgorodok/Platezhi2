@@ -12,28 +12,17 @@ object Format {
     private val dayMonth = DateTimeFormatter.ofPattern("d MMMM", ru)
     private val fullDate = DateTimeFormatter.ofPattern("d MMMM yyyy", ru)
     private val integer = NumberFormat.getIntegerInstance(ru)
-    private val decimal = NumberFormat.getNumberInstance(ru).apply {
-        minimumFractionDigits = 2
-        maximumFractionDigits = 2
-    }
 
     /** Формат даты старого приложения — для импорта. */
     val legacyDate: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
-    /** Сумма без валюты: «1 234» или «1 234,56». */
-    fun money(amountMinor: Long): String =
-        if (amountMinor % 100L == 0L) integer.format(amountMinor / 100L)
-        else decimal.format(amountMinor / 100.0)
+    /** Сумма без копеек: «1 235». Копейки нигде не показываем. */
+    fun money(amountMinor: Long): String = integer.format(Math.round(amountMinor / 100.0))
 
-    /** Сумма без копеек: «1 235». Для итогов в верхнем блоке. */
-    fun moneyWhole(amountMinor: Long): String = integer.format(Math.round(amountMinor / 100.0))
-
-    /** Значение для поля ввода суммы: «1234» или «1234,56». */
+    /** Значение для поля ввода суммы: «1235». Копейки не показываем. */
     fun amountInput(amountMinor: Long): String {
         if (amountMinor == 0L) return ""
-        val rub = amountMinor / 100
-        val kop = amountMinor % 100
-        return if (kop == 0L) rub.toString() else "$rub,${kop.toString().padStart(2, '0')}"
+        return Math.round(amountMinor / 100.0).toString()
     }
 
     /** Разбор «1 234,56» → копейки. Возвращает null при некорректном вводе. */

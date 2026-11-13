@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import ru.platezhi2.app.core.AppContainer
 import ru.platezhi2.app.data.settings.AppSettings
 import ru.platezhi2.app.data.settings.ThemeMode
+import ru.platezhi2.app.data.settings.ThemeStyle
 import ru.platezhi2.app.reminders.Reminders
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
@@ -18,6 +19,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { container.settingsRepository.setThemeMode(mode) }
+    }
+
+    fun setThemeStyle(style: ThemeStyle) {
+        viewModelScope.launch { container.settingsRepository.setThemeStyle(style) }
     }
 
     fun setDynamicColor(enabled: Boolean) {

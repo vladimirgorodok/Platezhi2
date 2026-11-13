@@ -1,6 +1,7 @@
 package ru.platezhi2.app.ui.settings
 
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -41,15 +43,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.platezhi2.app.BuildConfig
 import ru.platezhi2.app.data.settings.ThemeMode
+import ru.platezhi2.app.data.settings.ThemeStyle
 import ru.platezhi2.app.ui.AppViewModelProvider
-import ru.platezhi2.app.ui.theme.Violet
+import ru.platezhi2.app.ui.theme.accentColor
+import ru.platezhi2.app.ui.theme.secondaryColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +105,31 @@ fun SettingsScreen(
                             onClick = { viewModel.setThemeMode(mode) },
                             label = { Text(mode.title) },
                         )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "Цветовой стиль",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                ThemeStyle.entries.chunked(2).forEach { pair ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        pair.forEach { style ->
+                            StyleChip(
+                                style = style,
+                                selected = settings.themeStyle == style,
+                                onClick = { viewModel.setThemeStyle(style) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -182,12 +213,70 @@ private fun SettingsCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = Violet)
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
                 Text(title, style = MaterialTheme.typography.titleMedium)
             }
             Spacer(Modifier.height(12.dp))
             content()
+        }
+    }
+}
+
+/** Плитка выбора цветового стиля с образцами акцентов. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StyleChip(
+    style: ThemeStyle,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Card(
+        onClick = onClick,
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            },
+        ),
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outline,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(style.accentColor()),
+            )
+            Spacer(Modifier.width(5.dp))
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(style.secondaryColor()),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = style.title,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -225,11 +314,18 @@ private fun Stepper(symbol: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(40.dp)
-            .background(Violet.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+            .background(
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                RoundedCornerShape(12.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         TextButton(onClick = onClick, contentPadding = PaddingValues(0.dp)) {
-            Text(symbol, style = MaterialTheme.typography.titleLarge, color = Violet)
+            Text(
+                symbol,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

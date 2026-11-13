@@ -53,7 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.platezhi2.app.ui.AppViewModelProvider
-import ru.platezhi2.app.ui.theme.Violet
+import ru.platezhi2.app.ui.theme.LocalAppPalette
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -284,7 +284,7 @@ private fun InfoCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = Violet)
+                Icon(icon, contentDescription = null, tint = LocalAppPalette.current.accent)
                 Spacer(Modifier.width(10.dp))
                 Text(title, style = MaterialTheme.typography.titleMedium)
             }

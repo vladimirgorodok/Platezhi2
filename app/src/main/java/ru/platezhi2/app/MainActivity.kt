@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
             Platezhi2Theme(
                 themeMode = settings.themeMode,
+                themeStyle = settings.themeStyle,
                 dynamicColor = settings.dynamicColor,
             ) {
                 AppRoot(container = container)

@@ -73,8 +73,7 @@ import ru.platezhi2.app.data.model.AppIcons
 import ru.platezhi2.app.data.model.Recurrence
 import ru.platezhi2.app.ui.AppViewModelProvider
 import ru.platezhi2.app.ui.components.PaymentIcon
-import ru.platezhi2.app.ui.theme.Coral
-import ru.platezhi2.app.ui.theme.Violet
+import ru.platezhi2.app.ui.theme.LocalAppPalette
 import java.time.LocalDate
 
 private val MONTHS = listOf(
@@ -117,7 +116,7 @@ fun PaymentEditScreen(
                 actions = {
                     if (!viewModel.isNew) {
                         IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Удалить", tint = Coral)
+                            Icon(Icons.Filled.Delete, contentDescription = "Удалить", tint = LocalAppPalette.current.danger)
                         }
                     }
                 },
@@ -315,7 +314,7 @@ fun PaymentEditScreen(
                                     fontWeight = FontWeight.Bold,
                                 )
                                 IconButton(onClick = { viewModel.deletePayment(payment) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Удалить оплату", tint = Coral)
+                                    Icon(Icons.Filled.Delete, contentDescription = "Удалить оплату", tint = LocalAppPalette.current.danger)
                                 }
                             }
                         }
@@ -474,7 +473,7 @@ fun PaymentEditScreen(
                 TextButton(onClick = {
                     showDeleteDialog = false
                     viewModel.delete(onBack)
-                }) { Text("Удалить", color = Coral) }
+                }) { Text("Удалить", color = LocalAppPalette.current.danger) }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Отмена") }
@@ -509,8 +508,9 @@ private fun IconGrid(
 
 @Composable
 private fun IconChoice(icon: String, selected: Boolean, onClick: () -> Unit) {
-    val border = if (selected) Violet else Color.Transparent
-    val bg = if (selected) Violet.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant
+    val accent = LocalAppPalette.current.accent
+    val border = if (selected) accent else Color.Transparent
+    val bg = if (selected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant
     val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = Modifier
@@ -540,11 +540,11 @@ private fun StepperButton(symbol: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(40.dp)
-            .background(Violet.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+            .background(LocalAppPalette.current.accent.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center,
     ) {
         TextButton(onClick = onClick, contentPadding = PaddingValues(0.dp)) {
-            Text(symbol, style = MaterialTheme.typography.titleLarge, color = Violet)
+            Text(symbol, style = MaterialTheme.typography.titleLarge, color = LocalAppPalette.current.accent)
         }
     }
 }

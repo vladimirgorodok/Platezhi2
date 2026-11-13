@@ -64,10 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.platezhi2.app.core.Format
 import ru.platezhi2.app.ui.AppViewModelProvider
 import ru.platezhi2.app.ui.components.PaymentIcon
-import ru.platezhi2.app.ui.theme.Coral
-import ru.platezhi2.app.ui.theme.Mint
-import ru.platezhi2.app.ui.theme.Violet
-import ru.platezhi2.app.ui.theme.VioletDark
+import ru.platezhi2.app.ui.theme.LocalAppPalette
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -81,6 +78,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.state.collectAsState()
+    val palette = LocalAppPalette.current
     val overdue = state.rows.filter { !it.due.paid && it.due.overdue }.sortedBy { it.due.date }
     val upcoming = state.rows.filter { !it.due.paid && !it.due.overdue }.sortedBy { it.due.date }
     val paidRows = state.rows.filter { it.due.paid }
@@ -179,17 +177,17 @@ fun HomeScreen(
                 }
 
                 if (overdue.isNotEmpty()) {
-                    item { SectionHeader("Просрочено", Coral) }
+                    item { SectionHeader("Просрочено", palette.danger) }
                     items(overdue, key = { it.card.id }) { row -> renderRow(row) }
                 }
 
                 if (upcoming.isNotEmpty()) {
-                    item { SectionHeader("К оплате", Violet) }
+                    item { SectionHeader("К оплате", palette.accent) }
                     items(upcoming, key = { it.card.id }) { row -> renderRow(row) }
                 }
 
                 if (paidRows.isNotEmpty()) {
-                    item { SectionHeader("Оплачено", Mint) }
+                    item { SectionHeader("Оплачено", palette.success) }
                     items(paidRows, key = { it.card.id }) { row -> renderRow(row) }
                 }
             }
@@ -198,10 +196,14 @@ fun HomeScreen(
 }
 
 /** Цвет состояния платежа: рамка строки и акценты. */
-private fun statusColor(row: CardRow): Color = when {
-    row.due.paid -> Mint
-    row.due.overdue -> Coral
-    else -> Violet
+@Composable
+private fun statusColor(row: CardRow): Color {
+    val palette = LocalAppPalette.current
+    return when {
+        row.due.paid -> palette.success
+        row.due.overdue -> palette.danger
+        else -> palette.accent
+    }
 }
 
 @Composable
@@ -216,6 +218,7 @@ private fun OverviewBanner(
     onNextMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
 ) {
+    val palette = LocalAppPalette.current
     val total = totalUnpaid + totalPaid
     val progress = if (total > 0) totalPaid.toFloat() / total.toFloat() else 0f
 
@@ -223,7 +226,7 @@ private fun OverviewBanner(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(Brush.linearGradient(listOf(Violet, VioletDark)))
+            .background(Brush.linearGradient(listOf(palette.accent, palette.accentDark)))
             .padding(start = 6.dp, end = 14.dp, top = 6.dp, bottom = 12.dp),
     ) {
         Column {
@@ -275,7 +278,7 @@ private fun OverviewBanner(
                         style = MaterialTheme.typography.labelSmall,
                     )
                     Text(
-                        text = Format.moneyWhole(totalUnpaid),
+                        text = Format.money(totalUnpaid),
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
@@ -291,7 +294,7 @@ private fun OverviewBanner(
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
-                color = Mint,
+                color = palette.success,
                 trackColor = Color.White.copy(alpha = 0.22f),
             )
 
@@ -315,7 +318,7 @@ private fun OverviewBanner(
                     )
                 } else {
                     Text(
-                        text = "Оплачено ${Format.moneyWhole(totalPaid)}",
+                        text = "Оплачено ${Format.money(totalPaid)}",
                         color = Color.White.copy(alpha = 0.9f),
                         style = MaterialTheme.typography.labelLarge,
                     )
@@ -362,6 +365,7 @@ private fun PaymentRow(
     onClearPayment: () -> Unit,
 ) {
     val context = LocalContext.current
+    val palette = LocalAppPalette.current
     val card = row.card
     val info = row.due
     val accent = statusColor(row)
@@ -413,7 +417,7 @@ private fun PaymentRow(
                     Text(
                         text = "${Format.dayMonth(info.date)} · $dueText",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (info.overdue) Coral else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (info.overdue) palette.danger else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (info.overdue) FontWeight.SemiBold else FontWeight.Normal,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -496,7 +500,7 @@ private fun PaymentRow(
                     ) {
                         if (info.paid) {
                             TextButton(onClick = onClearPayment) {
-                                Text("Отменить оплату", color = Coral)
+                                Text("Отменить оплату", color = palette.danger)
                             }
                             Spacer(Modifier.width(8.dp))
                         }

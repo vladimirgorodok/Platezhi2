@@ -21,8 +21,21 @@ enum class ThemeMode(val key: String, val title: String) {
     }
 }
 
+/** Цветовой стиль оформления: акцент и оттенки фона. */
+enum class ThemeStyle(val key: String, val title: String) {
+    CLASSIC("classic", "Классика"),
+    OCEAN("ocean", "Океан"),
+    SUNSET("sunset", "Закат"),
+    FOREST("forest", "Лес");
+
+    companion object {
+        fun fromKey(k: String?): ThemeStyle = entries.firstOrNull { it.key == k } ?: CLASSIC
+    }
+}
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val themeStyle: ThemeStyle = ThemeStyle.CLASSIC,
     val dynamicColor: Boolean = false,
     val defaultReminderDaysBefore: Int = 1,
     val cloudFolderUri: String? = null,
@@ -34,6 +47,7 @@ class SettingsRepository(private val context: Context) {
 
     private object Keys {
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val THEME_STYLE = stringPreferencesKey("theme_style")
         val DYNAMIC = booleanPreferencesKey("dynamic_color")
         val REMINDER_DAYS = intPreferencesKey("reminder_days")
         val CLOUD_FOLDER = stringPreferencesKey("cloud_folder")
@@ -42,6 +56,7 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
         AppSettings(
             themeMode = ThemeMode.fromKey(p[Keys.THEME_MODE]),
+            themeStyle = ThemeStyle.fromKey(p[Keys.THEME_STYLE]),
             dynamicColor = p[Keys.DYNAMIC] ?: false,
             defaultReminderDaysBefore = p[Keys.REMINDER_DAYS] ?: 1,
             cloudFolderUri = p[Keys.CLOUD_FOLDER],
@@ -50,6 +65,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { it[Keys.THEME_MODE] = mode.key }
+    }
+
+    suspend fun setThemeStyle(style: ThemeStyle) {
+        context.dataStore.edit { it[Keys.THEME_STYLE] = style.key }
     }
 
     suspend fun setDynamicColor(enabled: Boolean) {
