@@ -151,7 +151,7 @@ fun PaymentEditScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    PaymentIcon(imagePath = state.imagePath, icon = state.icon, size = 72.dp)
+                    PaymentIcon(imagePath = state.imagePath, icon = state.icon, size = 96.dp)
                     Spacer(Modifier.height(14.dp))
                     IconGrid(
                         selected = if (state.imagePath == null) state.icon else null,

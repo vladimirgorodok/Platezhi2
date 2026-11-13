@@ -2,7 +2,6 @@ package ru.platezhi2.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -22,8 +21,9 @@ import java.io.File
 /**
  * Иконка платежа: картинка из файла либо стандартный значок.
  *
- * Иконка не вписывается в круг: картинка показывается целиком (без обрезки),
- * а фон — скруглённый квадрат.
+ * Картинка из файла показывается целиком (без обрезки) и без рамки,
+ * подложки и отступов — только само изображение, максимально крупно.
+ * Для стандартных значков рисуется скруглённая подложка.
  */
 @Composable
 fun PaymentIcon(
@@ -31,31 +31,29 @@ fun PaymentIcon(
     icon: String,
     size: Dp = 46.dp,
 ) {
-    val shape = RoundedCornerShape(size * 0.28f)
+    if (!imagePath.isNullOrBlank()) {
+        val model: Any = if (imagePath.startsWith("content:") || imagePath.startsWith("file:")) {
+            android.net.Uri.parse(imagePath)
+        } else {
+            File(imagePath)
+        }
+        AsyncImage(
+            model = model,
+            contentDescription = null,
+            // Fit показывает картинку целиком: ничего не обрезается и не дополняется.
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(size),
+        )
+        return
+    }
+
     Box(
         modifier = Modifier
             .size(size)
-            .clip(shape)
+            .clip(RoundedCornerShape(size * 0.28f))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        if (!imagePath.isNullOrBlank()) {
-            val model: Any = if (imagePath.startsWith("content:") || imagePath.startsWith("file:")) {
-                android.net.Uri.parse(imagePath)
-            } else {
-                File(imagePath)
-            }
-            AsyncImage(
-                model = model,
-                contentDescription = null,
-                // Fit показывает иконку целиком — ничего не обрезается по кругу.
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .size(size)
-                    .padding(size * 0.08f),
-            )
-        } else {
-            Text(text = AppIcons.normalize(icon), fontSize = (size.value * 0.5f).sp)
-        }
+        Text(text = AppIcons.normalize(icon), fontSize = (size.value * 0.5f).sp)
     }
 }
