@@ -67,6 +67,14 @@ class PaymentRepository(
         return paymentDao.insert(normalized.toEntity())
     }
 
+    /** Создаёт оплату или обновляет уже существующую (дата и сумма в строке платежа). */
+    suspend fun savePayment(payment: Payment): Long {
+        val now = System.currentTimeMillis()
+        val normalized = payment.copy(createdAt = if (payment.createdAt == 0L) now else payment.createdAt)
+        if (normalized.id != 0L && paymentDao.update(normalized.toEntity()) > 0) return normalized.id
+        return paymentDao.insert(normalized.copy(id = 0L).toEntity())
+    }
+
     suspend fun deletePayment(payment: Payment) = paymentDao.delete(payment.toEntity())
 
     suspend fun deletePaymentForPeriod(cardId: Long, periodEpochDay: Long) =

@@ -25,6 +25,9 @@ object Format {
         if (amountMinor % 100L == 0L) integer.format(amountMinor / 100L)
         else decimal.format(amountMinor / 100.0)
 
+    /** Сумма без копеек: «1 235». Для итогов в верхнем блоке. */
+    fun moneyWhole(amountMinor: Long): String = integer.format(Math.round(amountMinor / 100.0))
+
     /** Значение для поля ввода суммы: «1234» или «1234,56». */
     fun amountInput(amountMinor: Long): String {
         if (amountMinor == 0L) return ""

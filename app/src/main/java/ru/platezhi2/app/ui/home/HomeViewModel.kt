@@ -117,21 +117,35 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         return null
     }
 
-    /** Отметить оплату за период строки (в выбранном месяце) или снять отметку. */
-    fun togglePaid(row: CardRow) {
+    /** Оплатить период строки (в выбранном месяце) или сохранить изменённую дату/сумму. */
+    fun savePayment(row: CardRow, paidAtEpochDay: Long, amountMinor: Long) {
         viewModelScope.launch {
             val repo = container.paymentRepository
-            if (row.due.paid) {
-                repo.deletePaymentForPeriod(row.card.id, row.due.date.toEpochDay())
-                Reminders.schedule(
-                    container.appContext,
-                    row.card,
-                    repo.getPaymentsFor(row.card.id),
+            val existing = row.periodPayment
+            repo.savePayment(
+                Payment(
+                    id = existing?.id ?: 0L,
+                    cardId = row.card.id,
+                    periodEpochDay = row.due.date.toEpochDay(),
+                    paidAtEpochDay = paidAtEpochDay,
+                    amountMinor = amountMinor,
+                    createdAt = existing?.createdAt ?: 0L,
                 )
-            } else {
-                repo.addPayment(DueDates.newPaymentForPeriod(row.card, row.due.date))
-                Reminders.cancel(container.appContext, row.card)
-            }
+            )
+            Reminders.cancel(container.appContext, row.card)
+        }
+    }
+
+    /** Снять отметку об оплате за период строки. */
+    fun clearPayment(row: CardRow) {
+        viewModelScope.launch {
+            val repo = container.paymentRepository
+            repo.deletePaymentForPeriod(row.card.id, row.due.date.toEpochDay())
+            Reminders.schedule(
+                container.appContext,
+                row.card,
+                repo.getPaymentsFor(row.card.id),
+            )
         }
     }
 
