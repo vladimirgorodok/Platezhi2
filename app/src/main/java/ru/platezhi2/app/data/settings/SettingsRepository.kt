@@ -39,6 +39,8 @@ data class AppSettings(
     val dynamicColor: Boolean = false,
     val defaultReminderDaysBefore: Int = 1,
     val cloudFolderUri: String? = null,
+    /** Прозрачность иконки-подложки в строке платежа, проценты (90 — почти не видно). */
+    val backdropTransparency: Int = 90,
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -51,6 +53,7 @@ class SettingsRepository(private val context: Context) {
         val DYNAMIC = booleanPreferencesKey("dynamic_color")
         val REMINDER_DAYS = intPreferencesKey("reminder_days")
         val CLOUD_FOLDER = stringPreferencesKey("cloud_folder")
+        val BACKDROP = intPreferencesKey("backdrop_transparency")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -60,6 +63,7 @@ class SettingsRepository(private val context: Context) {
             dynamicColor = p[Keys.DYNAMIC] ?: false,
             defaultReminderDaysBefore = p[Keys.REMINDER_DAYS] ?: 1,
             cloudFolderUri = p[Keys.CLOUD_FOLDER],
+            backdropTransparency = (p[Keys.BACKDROP] ?: 90).coerceIn(0, 100),
         )
     }
 
@@ -73,6 +77,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDynamicColor(enabled: Boolean) {
         context.dataStore.edit { it[Keys.DYNAMIC] = enabled }
+    }
+
+    suspend fun setBackdropTransparency(value: Int) {
+        context.dataStore.edit { it[Keys.BACKDROP] = value.coerceIn(0, 100) }
     }
 
     suspend fun setDefaultReminderDaysBefore(days: Int) {

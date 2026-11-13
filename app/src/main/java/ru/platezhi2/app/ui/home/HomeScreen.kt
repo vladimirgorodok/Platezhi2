@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.platezhi2.app.core.Format
 import ru.platezhi2.app.ui.AppViewModelProvider
+import ru.platezhi2.app.ui.components.PaymentBackdrop
 import ru.platezhi2.app.ui.components.PaymentIcon
 import ru.platezhi2.app.ui.theme.LocalAppPalette
 import java.time.LocalDate
@@ -93,6 +94,7 @@ fun HomeScreen(
         PaymentRow(
             row = row,
             expanded = expandedCardId == row.card.id,
+            backdropTransparency = state.backdropTransparency,
             editPaidAt = editPaidAt,
             editAmount = editAmount,
             onToggleExpand = {
@@ -355,6 +357,7 @@ private fun SectionHeader(title: String, accent: Color) {
 private fun PaymentRow(
     row: CardRow,
     expanded: Boolean,
+    backdropTransparency: Int,
     editPaidAt: Long,
     editAmount: String,
     onToggleExpand: () -> Unit,
@@ -385,127 +388,139 @@ private fun PaymentRow(
         border = BorderStroke(2.dp, accent),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(shape)
-                    .clickable(onClick = onToggleExpand)
-                    .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PaymentIcon(imagePath = card.imagePath, icon = card.icon, size = 40.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = card.title.ifBlank { "Без названия" },
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = card.recurrence.title,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "${Format.dayMonth(info.date)} · $dueText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (info.overdue) palette.danger else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (info.overdue) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = Format.money(card.amountMinor),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (info.paid) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
-                )
-                // Шестерёнка — открыть карточку платежа.
-                IconButton(onClick = onOpenCard, modifier = Modifier.size(38.dp)) {
-                    Icon(
-                        Icons.Filled.Settings,
-                        contentDescription = "Открыть карточку платежа",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-
-            if (expanded) {
-                Column(
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Фон строки — растянутая иконка платежа с заданной прозрачностью.
+            PaymentBackdrop(
+                imagePath = card.imagePath,
+                icon = card.icon,
+                transparency = backdropTransparency,
+                modifier = Modifier.matchParentSize(),
+            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                        .clip(shape)
+                        .clickable(onClick = onToggleExpand)
+                        .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    PaymentIcon(imagePath = card.imagePath, icon = card.icon, size = 40.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Дата",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
+                            text = card.title.ifBlank { "Без названия" },
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        OutlinedButton(
-                            onClick = {
-                                val current = LocalDate.ofEpochDay(editPaidAt)
-                                DatePickerDialog(
-                                    context,
-                                    { _, year, month, day ->
-                                        onEditPaidAt(LocalDate.of(year, month + 1, day).toEpochDay())
-                                    },
-                                    current.year,
-                                    current.monthValue - 1,
-                                    current.dayOfMonth,
-                                ).show()
-                            },
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = card.recurrence.title,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "${Format.dayMonth(info.date)} · $dueText",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (info.overdue) palette.danger
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (info.overdue) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = Format.money(card.amountMinor),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (info.paid) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    // Шестерёнка — открыть карточку платежа.
+                    IconButton(onClick = onOpenCard, modifier = Modifier.size(38.dp)) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = "Открыть карточку платежа",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+
+                if (expanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(Format.date(LocalDate.ofEpochDay(editPaidAt)))
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Сумма",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        OutlinedTextField(
-                            value = editAmount,
-                            onValueChange = onEditAmount,
-                            singleLine = true,
-                            placeholder = { Text("0") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.width(150.dp),
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (info.paid) {
-                            TextButton(onClick = onClearPayment) {
-                                Text("Отменить оплату", color = palette.danger)
+                            Text(
+                                text = "Дата",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    val current = LocalDate.ofEpochDay(editPaidAt)
+                                    DatePickerDialog(
+                                        context,
+                                        { _, year, month, day ->
+                                            onEditPaidAt(
+                                                LocalDate.of(year, month + 1, day).toEpochDay()
+                                            )
+                                        },
+                                        current.year,
+                                        current.monthValue - 1,
+                                        current.dayOfMonth,
+                                    ).show()
+                                },
+                            ) {
+                                Text(Format.date(LocalDate.ofEpochDay(editPaidAt)))
                             }
-                            Spacer(Modifier.width(8.dp))
                         }
-                        Button(onClick = onSavePayment) {
-                            Text(if (info.paid) "Сохранить" else "Оплатить")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Сумма",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = editAmount,
+                                onValueChange = onEditAmount,
+                                singleLine = true,
+                                placeholder = { Text("0") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.width(150.dp),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (info.paid) {
+                                TextButton(onClick = onClearPayment) {
+                                    Text("Отменить оплату", color = palette.danger)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Button(onClick = onSavePayment) {
+                                Text(if (info.paid) "Сохранить" else "Оплатить")
+                            }
                         }
                     }
                 }

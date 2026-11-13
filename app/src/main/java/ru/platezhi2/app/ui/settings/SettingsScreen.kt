@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlin.math.roundToInt
 import ru.platezhi2.app.BuildConfig
 import ru.platezhi2.app.data.settings.ThemeMode
 import ru.platezhi2.app.data.settings.ThemeStyle
@@ -132,6 +134,33 @@ fun SettingsScreen(
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Прозрачность подложки",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Иконка платежа фоном строки",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = "${settings.backdropTransparency}%",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Slider(
+                    value = settings.backdropTransparency.toFloat(),
+                    onValueChange = { viewModel.setBackdropTransparency(it.roundToInt()) },
+                    valueRange = 40f..100f,
+                )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     Spacer(Modifier.height(6.dp))
                     SwitchRow(

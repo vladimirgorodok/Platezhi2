@@ -34,6 +34,8 @@ data class HomeState(
     val totalPaid: Long = 0L,
     val unpaidCount: Int = 0,
     val overdueCount: Int = 0,
+    /** Прозрачность иконки-подложки строки, проценты (из настроек). */
+    val backdropTransparency: Int = 90,
 ) {
     val isCurrentMonth: Boolean get() = month == YearMonth.now()
 }
@@ -47,8 +49,9 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         container.paymentRepository.observeCards(),
         container.paymentRepository.observePayments(),
         selectedMonth,
-    ) { cards, payments, month ->
-        buildState(cards, payments, month)
+        container.settingsRepository.settings,
+    ) { cards, payments, month, settings ->
+        buildState(cards, payments, month, settings.backdropTransparency)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeState())
 
     // ---- Выбор месяца ----
@@ -65,7 +68,12 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         selectedMonth.value = YearMonth.now()
     }
 
-    private fun buildState(cards: List<Card>, payments: List<Payment>, month: YearMonth): HomeState {
+    private fun buildState(
+        cards: List<Card>,
+        payments: List<Payment>,
+        month: YearMonth,
+        backdropTransparency: Int = 90,
+    ): HomeState {
         val today = LocalDate.now()
         val byCard = payments.groupBy { it.cardId }
 
@@ -107,6 +115,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
             totalPaid = paid.sumOf { it.periodPayment?.amountMinor ?: it.card.amountMinor },
             unpaidCount = unpaid.size,
             overdueCount = unpaid.count { it.due.overdue },
+            backdropTransparency = backdropTransparency,
         )
     }
 

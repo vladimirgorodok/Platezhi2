@@ -29,6 +29,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsRepository.setDynamicColor(enabled) }
     }
 
+    fun setBackdropTransparency(value: Int) {
+        viewModelScope.launch { container.settingsRepository.setBackdropTransparency(value) }
+    }
+
     fun setDefaultReminderDays(days: Int) {
         viewModelScope.launch {
             container.settingsRepository.setDefaultReminderDaysBefore(days.coerceIn(0, 60))
