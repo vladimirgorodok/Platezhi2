@@ -2,8 +2,9 @@ package ru.platezhi2.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,17 +19,23 @@ import coil.compose.AsyncImage
 import ru.platezhi2.app.data.model.AppIcons
 import java.io.File
 
-/** Иконка платежа: картинка из файла либо стандартный значок. */
+/**
+ * Иконка платежа: картинка из файла либо стандартный значок.
+ *
+ * Иконка не вписывается в круг: картинка показывается целиком (без обрезки),
+ * а фон — скруглённый квадрат.
+ */
 @Composable
 fun PaymentIcon(
     imagePath: String?,
     icon: String,
     size: Dp = 46.dp,
 ) {
+    val shape = RoundedCornerShape(size * 0.28f)
     Box(
         modifier = Modifier
             .size(size)
-            .clip(CircleShape)
+            .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
@@ -41,11 +48,14 @@ fun PaymentIcon(
             AsyncImage(
                 model = model,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(size),
+                // Fit показывает иконку целиком — ничего не обрезается по кругу.
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(size)
+                    .padding(size * 0.08f),
             )
         } else {
-            Text(text = AppIcons.normalize(icon), fontSize = (size.value * 0.46f).sp)
+            Text(text = AppIcons.normalize(icon), fontSize = (size.value * 0.5f).sp)
         }
     }
 }

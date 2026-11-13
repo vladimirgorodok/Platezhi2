@@ -50,6 +50,19 @@ object DueDates {
     fun periodFor(card: Card, today: LocalDate = LocalDate.now()): LocalDate =
         currentPeriodDue(card.dueDay, card.dueMonth, card.recurrence, today)
 
+    /**
+     * Срок оплаты карточки в конкретном месяце — для фильтра по месяцам.
+     * Возвращает null, если в этом месяце платежа нет (годовой платёж другого месяца).
+     */
+    fun dueInMonth(card: Card, month: YearMonth): LocalDate? = when (card.recurrence) {
+        Recurrence.YEARLY -> if (month.monthValue == card.dueMonth) {
+            safe(month.year, month.monthValue, card.dueDay)
+        } else {
+            null
+        }
+        else -> safe(month.year, month.monthValue, card.dueDay)
+    }
+
     fun paidPeriods(payments: List<Payment>): Set<Long> =
         payments.mapTo(HashSet()) { it.periodEpochDay }
 
@@ -79,13 +92,21 @@ object DueDates {
     /** Оплата за текущий период с плановой суммой карточки и сегодняшней датой. */
     fun newPayment(card: Card, amountMinor: Long = card.amountMinor, today: LocalDate = LocalDate.now()): Payment {
         val due = currentPeriodDue(card.dueDay, card.dueMonth, card.recurrence, today)
-        return Payment(
-            cardId = card.id,
-            periodEpochDay = due.toEpochDay(),
-            paidAtEpochDay = today.toEpochDay(),
-            amountMinor = amountMinor,
-        )
+        return newPaymentForPeriod(card, due, amountMinor, today)
     }
+
+    /** Оплата за указанный период (нужно для отметки оплаты в другом месяце). */
+    fun newPaymentForPeriod(
+        card: Card,
+        period: LocalDate,
+        amountMinor: Long = card.amountMinor,
+        paidAt: LocalDate = LocalDate.now(),
+    ): Payment = Payment(
+        cardId = card.id,
+        periodEpochDay = period.toEpochDay(),
+        paidAtEpochDay = paidAt.toEpochDay(),
+        amountMinor = amountMinor,
+    )
 
     /** Период, к которому относится дата оплаты (для импорта истории). */
     fun periodForPaidDate(card: Card, paidAt: LocalDate): LocalDate =

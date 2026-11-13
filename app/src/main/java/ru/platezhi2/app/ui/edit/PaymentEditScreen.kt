@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -512,12 +511,13 @@ private fun IconGrid(
 private fun IconChoice(icon: String, selected: Boolean, onClick: () -> Unit) {
     val border = if (selected) Violet else Color.Transparent
     val bg = if (selected) Violet.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant
+    val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = Modifier
             .size(40.dp)
-            .clip(CircleShape)
+            .clip(shape)
             .background(bg)
-            .border(2.dp, border, CircleShape)
+            .border(2.dp, border, shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

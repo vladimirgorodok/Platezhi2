@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
@@ -29,7 +31,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -65,6 +66,7 @@ import ru.platezhi2.app.ui.theme.Mint
 import ru.platezhi2.app.ui.theme.Violet
 import ru.platezhi2.app.ui.theme.VioletDark
 import java.time.LocalDate
+import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +80,8 @@ fun HomeScreen(
     val state by viewModel.state.collectAsState()
     val overdue = state.rows.filter { !it.due.paid && it.due.overdue }.sortedBy { it.due.date }
     val upcoming = state.rows.filter { !it.due.paid && !it.due.overdue }.sortedBy { it.due.date }
-    val paidRows = state.rows.filter { it.due.paid }.sortedByDescending { it.due.date }
+    val paidRows = state.rows.filter { it.due.paid }
+        .sortedByDescending { it.periodPayment?.paidAtEpochDay ?: it.due.date.toEpochDay() }
 
     var cardToDelete by remember { mutableStateOf<Card?>(null) }
 
@@ -93,6 +96,9 @@ fun HomeScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onBackground,
                 ),
                 actions = {
+                    IconButton(onClick = onAddPayment) {
+                        Icon(Icons.Filled.Add, contentDescription = "Добавить платёж")
+                    }
                     IconButton(onClick = onOpenData) {
                         Icon(Icons.Filled.CloudSync, contentDescription = "Данные")
                     }
@@ -102,33 +108,33 @@ fun HomeScreen(
                 },
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onAddPayment,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("Добавить", fontWeight = FontWeight.SemiBold) },
-            )
-        },
     ) { padding ->
-        if (state.rows.isEmpty()) {
+        if (state.cardCount == 0) {
             EmptyState(modifier = Modifier.padding(padding))
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
                     OverviewBanner(
+                        month = state.month,
+                        isCurrentMonth = state.isCurrentMonth,
                         totalUnpaid = state.totalUnpaid,
                         totalPaid = state.totalPaid,
                         unpaidCount = state.unpaidCount,
                         overdueCount = state.overdueCount,
+                        onPreviousMonth = viewModel::previousMonth,
+                        onNextMonth = viewModel::nextMonth,
+                        onCurrentMonth = viewModel::currentMonth,
                     )
+                }
+
+                if (state.rows.isEmpty()) {
+                    item { EmptyMonth(isCurrentMonth = state.isCurrentMonth) }
                 }
 
                 if (overdue.isNotEmpty()) {
@@ -195,10 +201,15 @@ fun HomeScreen(
 
 @Composable
 private fun OverviewBanner(
+    month: YearMonth,
+    isCurrentMonth: Boolean,
     totalUnpaid: Long,
     totalPaid: Long,
     unpaidCount: Int,
     overdueCount: Int,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
 ) {
     val total = totalUnpaid + totalPaid
     val progress = if (total > 0) totalPaid.toFloat() / total.toFloat() else 0f
@@ -208,53 +219,99 @@ private fun OverviewBanner(
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
             .background(Brush.linearGradient(listOf(Violet, VioletDark)))
-            .padding(20.dp),
+            .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 20.dp),
     ) {
         Column {
-            Text(
-                text = "Осталось оплатить",
-                color = Color.White.copy(alpha = 0.85f),
-                style = MaterialTheme.typography.labelLarge,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = Format.money(totalUnpaid),
-                color = Color.White,
-                style = MaterialTheme.typography.displaySmall,
-            )
-            Spacer(Modifier.height(14.dp))
-            LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = Mint,
-                trackColor = Color.White.copy(alpha = 0.22f),
-            )
-            Spacer(Modifier.height(12.dp))
+            // ---- Фильтр по месяцам ----
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "$unpaidCount к оплате",
-                    color = Color.White.copy(alpha = 0.9f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (overdueCount > 0) {
-                    Text(
-                        text = "$overdueCount просрочено",
-                        color = Color(0xFFFFD9D8),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
+                IconButton(onClick = onPreviousMonth, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.ChevronLeft,
+                        contentDescription = "Предыдущий месяц",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
                     )
-                } else {
+                }
+                Text(
+                    text = Format.month(month),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                IconButton(onClick = onNextMonth, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.ChevronRight,
+                        contentDescription = "Следующий месяц",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                if (!isCurrentMonth) {
+                    TextButton(
+                        onClick = onCurrentMonth,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Text(
+                            text = "Текущий",
+                            color = Color.White.copy(alpha = 0.92f),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            Column(modifier = Modifier.padding(horizontal = 12.dp)) {
+                Text(
+                    text = "Осталось оплатить",
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = Format.money(totalUnpaid),
+                    color = Color.White,
+                    style = MaterialTheme.typography.displaySmall,
+                )
+                Spacer(Modifier.height(14.dp))
+                LinearProgressIndicator(
+                    progress = { progress.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = Mint,
+                    trackColor = Color.White.copy(alpha = 0.22f),
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Text(
-                        text = "Оплачено ${Format.money(totalPaid)}",
+                        text = "$unpaidCount к оплате",
                         color = Color.White.copy(alpha = 0.9f),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    if (overdueCount > 0) {
+                        Text(
+                            text = "$overdueCount просрочено",
+                            color = Color(0xFFFFD9D8),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    } else {
+                        Text(
+                            text = "Оплачено ${Format.money(totalPaid)}",
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
         }
@@ -295,8 +352,9 @@ private fun PaymentRow(
     var menuOpen by remember { mutableStateOf(false) }
     val card = row.card
     val info = row.due
-    val dueText = if (info.paid && row.lastPayment != null) {
-        "оплачено ${Format.dayMonth(LocalDate.ofEpochDay(row.lastPayment.paidAtEpochDay))}"
+    val paidAt = row.periodPayment?.paidAtEpochDay ?: row.lastPayment?.paidAtEpochDay
+    val dueText = if (info.paid && paidAt != null) {
+        "оплачено ${Format.dayMonth(LocalDate.ofEpochDay(paidAt))}"
     } else {
         Format.relativeDue(info.daysLeft, info.paid)
     }
@@ -387,6 +445,35 @@ private fun PaymentRow(
 }
 
 @Composable
+private fun EmptyMonth(isCurrentMonth: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = "🗓", fontSize = 40.sp)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "В этом месяце платежей нет",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = if (isCurrentMonth) {
+                "Добавьте платёж кнопкой «+» вверху экрана."
+            } else {
+                "Переключите месяц стрелками вверху."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
@@ -404,7 +491,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Нажмите «Добавить», чтобы создать первый платёж и настроить напоминание.",
+            text = "Нажмите «+» вверху экрана, чтобы создать первый платёж и настроить напоминание.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

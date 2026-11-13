@@ -49,6 +49,12 @@ object Format {
     fun date(date: LocalDate): String = date.format(fullDate)
     fun dayMonth(date: LocalDate): String = date.format(dayMonth)
 
+    private val monthTitle = DateTimeFormatter.ofPattern("LLLL yyyy", ru)
+
+    /** «Ноябрь 2026». */
+    fun month(month: java.time.YearMonth): String =
+        month.format(monthTitle).replaceFirstChar { it.uppercase(ru) }
+
     fun todayEpochDay(): Long = LocalDate.now().toEpochDay()
 
     /** «сегодня», «завтра», «через 3 дня», «просрочен на 2 дня». */
