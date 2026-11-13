@@ -1,13 +1,16 @@
 package ru.platezhi2.app.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.platezhi2.app.data.model.Card
 import ru.platezhi2.app.data.model.Payment
 import ru.platezhi2.app.data.model.Recurrence
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
  * Сопоставление оплат с периодом месяца.
@@ -84,5 +87,83 @@ class DueDatesTest {
         val p = payment(LocalDate.of(2025, 6, 20))
         assertNotNull(DueDates.paymentForPeriod(yearly, listOf(p), LocalDate.of(2025, 6, 15)))
         assertNull(DueDates.paymentForPeriod(yearly, listOf(p), LocalDate.of(2026, 6, 15)))
+    }
+
+    private fun cardCreatedOn(date: LocalDate) =
+        card.copy(createdAt = date.toEpochDay() * 86_400_000L)
+
+    @Test
+    fun `новая карточка существует с месяца создания`() {
+        val today = LocalDate.of(2026, 11, 13)
+        val fresh = cardCreatedOn(today)
+        assertEquals(YearMonth.of(2026, 11), DueDates.startMonth(fresh, emptyList(), today))
+    }
+
+    @Test
+    fun `карточка без даты создания существует с текущего месяца`() {
+        val today = LocalDate.of(2026, 11, 13)
+        assertEquals(YearMonth.of(2026, 11), DueDates.startMonth(card, emptyList(), today))
+    }
+
+    @Test
+    fun `перенесённая оплата показывает карточку с прошлого месяца`() {
+        val today = LocalDate.of(2026, 11, 13)
+        val imported = cardCreatedOn(today)
+        val old = payment(LocalDate.of(2025, 12, 2), paidAt = LocalDate.of(2025, 12, 22))
+        assertEquals(
+            YearMonth.of(2025, 12),
+            DueDates.startMonth(imported, listOf(old), today),
+        )
+    }
+
+    @Test
+    fun `оплата внесена раньше периода — карточка появляется по дате внесения`() {
+        val today = LocalDate.of(2026, 11, 13)
+        val imported = cardCreatedOn(today)
+        val early = payment(LocalDate.of(2026, 11, 10), paidAt = LocalDate.of(2026, 10, 30))
+        assertEquals(YearMonth.of(2026, 10), DueDates.startMonth(imported, listOf(early), today))
+    }
+
+    @Test
+    fun `новая карточка не показывается в прошлых месяцах`() {
+        val today = LocalDate.of(2026, 11, 13)
+        val fresh = cardCreatedOn(today)
+        val start = DueDates.startMonth(fresh, emptyList(), today)
+        assertTrue(start > YearMonth.of(2026, 8))
+        assertFalse(start > YearMonth.of(2026, 11))
+    }
+
+    @Test
+    fun `срок, прошедший до создания карточки, не просрочен`() {
+        val today = LocalDate.of(2026, 11, 13)
+        // Яндекс: подписка оформлена 13 ноября, срок оплаты — 10-е число.
+        val fresh = cardCreatedOn(today).copy(dueDay = 10)
+        assertFalse(
+            DueDates.isOverdue(fresh, emptyList(), LocalDate.of(2026, 11, 10), paid = false, today = today)
+        )
+        // Следующий срок уже настоящая просрочка.
+        assertTrue(
+            DueDates.isOverdue(
+                fresh, emptyList(), LocalDate.of(2026, 12, 10), paid = false,
+                today = LocalDate.of(2027, 1, 5),
+            )
+        )
+    }
+
+    @Test
+    fun `пропуск после первой оплаты остаётся просрочкой`() {
+        val today = LocalDate.of(2026, 11, 13)
+        val imported = cardCreatedOn(today)
+        val july = payment(LocalDate.of(2026, 7, 22))
+        assertTrue(
+            DueDates.isOverdue(
+                imported, listOf(july), LocalDate.of(2026, 8, 22), paid = false, today = today,
+            )
+        )
+        assertFalse(
+            DueDates.isOverdue(
+                imported, listOf(july), LocalDate.of(2026, 7, 22), paid = true, today = today,
+            )
+        )
     }
 }

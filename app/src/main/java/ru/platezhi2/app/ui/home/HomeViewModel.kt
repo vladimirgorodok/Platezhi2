@@ -71,6 +71,10 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
         val rows = cards.mapNotNull { card ->
             val history = byCard[card.id].orEmpty()
+            // Раньше появления карточки платежей быть не может: иначе новая
+            // подписка «задним числом» показывала просрочки за прошлые месяцы.
+            val start = DueDates.startDay(card, history, today)
+            if (month < YearMonth.from(start)) return@mapNotNull null
             val period = periodInMonth(card, history, month) ?: return@mapNotNull null
             val periodPayment = DueDates.paymentForPeriod(card, history, period)
             val paid = if (card.recurrence == Recurrence.NONE) {
@@ -83,7 +87,8 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
                 due = DueInfo(
                     date = period,
                     paid = paid,
-                    overdue = !paid && period.isBefore(today),
+                    // Срок, прошедший ещё до появления карточки, просрочкой не считается.
+                    overdue = DueDates.isOverdue(card, history, period, paid, today),
                     daysLeft = period.toEpochDay() - today.toEpochDay(),
                 ),
                 periodPayment = periodPayment,

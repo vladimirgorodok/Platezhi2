@@ -66,6 +66,45 @@ object DueDates {
     fun paidPeriods(payments: List<Payment>): Set<Long> =
         payments.mapTo(HashSet()) { it.periodEpochDay }
 
+    /** Месяц, с которого карточка существует: её создание или первая известная оплата. */
+    fun startMonth(card: Card, payments: List<Payment>, today: LocalDate = LocalDate.now()): YearMonth =
+        YearMonth.from(startDay(card, payments, today))
+
+    /**
+     * Дата, с которой карточка существует.
+     *
+     * У новой подписки нет платежей за месяцы до её появления: они не должны
+     * показываться просроченными. Для перенесённых карточек берём самую раннюю
+     * известную оплату — раньше неё данных нет.
+     */
+    fun startDay(card: Card, payments: List<Payment>, today: LocalDate = LocalDate.now()): LocalDate {
+        val created = card.createdAt.takeIf { it > 0L }
+            ?.let { LocalDate.ofEpochDay(it / MILLIS_PER_DAY) }
+            ?: today
+        val firstPayment = payments
+            .flatMap { listOf(it.periodEpochDay, it.paidAtEpochDay) }
+            .minOrNull()
+            ?.takeIf { it > 0L }
+            ?.let { LocalDate.ofEpochDay(it) }
+        return if (firstPayment != null && firstPayment.isBefore(created)) firstPayment else created
+    }
+
+    private const val MILLIS_PER_DAY = 86_400_000L
+
+    /**
+     * Считается ли неоплаченный период просроченным.
+     *
+     * Срок, который прошёл ещё до появления карточки (новая подписка заведена
+     * позже числа оплаты), просрочкой не считается — он показывается к оплате.
+     */
+    fun isOverdue(
+        card: Card,
+        payments: List<Payment>,
+        period: LocalDate,
+        paid: Boolean,
+        today: LocalDate = LocalDate.now(),
+    ): Boolean = !paid && period.isBefore(today) && !period.isBefore(startDay(card, payments, today))
+
     /**
      * Оплата, закрывающая период [period].
      *
