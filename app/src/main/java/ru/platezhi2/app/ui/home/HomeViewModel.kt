@@ -72,7 +72,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         val rows = cards.mapNotNull { card ->
             val history = byCard[card.id].orEmpty()
             val period = periodInMonth(card, history, month) ?: return@mapNotNull null
-            val periodPayment = history.firstOrNull { it.periodEpochDay == period.toEpochDay() }
+            val periodPayment = DueDates.paymentForPeriod(card, history, period)
             val paid = if (card.recurrence == Recurrence.NONE) {
                 periodPayment != null || history.isNotEmpty()
             } else {
@@ -140,7 +140,14 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     fun clearPayment(row: CardRow) {
         viewModelScope.launch {
             val repo = container.paymentRepository
-            repo.deletePaymentForPeriod(row.card.id, row.due.date.toEpochDay())
+            val existing = row.periodPayment
+            // Удаляем именно найденную оплату: её дата периода могла отличаться
+            // от числа месяца карточки (данные, перенесённые из старого приложения).
+            if (existing != null) {
+                repo.deletePayment(existing)
+            } else {
+                repo.deletePaymentForPeriod(row.card.id, row.due.date.toEpochDay())
+            }
             Reminders.schedule(
                 container.appContext,
                 row.card,

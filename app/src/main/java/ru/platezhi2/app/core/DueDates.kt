@@ -66,6 +66,23 @@ object DueDates {
     fun paidPeriods(payments: List<Payment>): Set<Long> =
         payments.mapTo(HashSet()) { it.periodEpochDay }
 
+    /**
+     * Оплата, закрывающая период [period].
+     *
+     * Сначала ищем точное совпадение по сроку. Если его нет, считаем период
+     * закрытым оплатой, сделанной в том же месяце: в файлах старого приложения
+     * и в выгрузках дата оплаты могла не совпадать с числом месяца карточки
+     * (например, в карточке срок «2-е», а платили 22-го). Без такого
+     * сопоставления все прошлые месяцы выглядели бы просроченными.
+     */
+    fun paymentForPeriod(card: Card, payments: List<Payment>, period: LocalDate): Payment? {
+        payments.firstOrNull { it.periodEpochDay == period.toEpochDay() }?.let { return it }
+        if (card.recurrence == Recurrence.NONE) return null
+        val month = YearMonth.from(period)
+        return payments.firstOrNull { YearMonth.from(LocalDate.ofEpochDay(it.periodEpochDay)) == month }
+            ?: payments.firstOrNull { YearMonth.from(LocalDate.ofEpochDay(it.paidAtEpochDay)) == month }
+    }
+
     fun info(card: Card, payments: List<Payment>, today: LocalDate = LocalDate.now()): DueInfo {
         val date = if (card.recurrence == Recurrence.NONE) {
             payments.minByOrNull { it.periodEpochDay }

@@ -234,7 +234,9 @@ object ImportParser {
                 )
             }
             row.paid -> {
-                val period = row.dueDate ?: row.paidDate ?: LocalDate.now()
+                val raw = row.dueDate ?: row.paidDate ?: LocalDate.now()
+                val period = if (card.recurrence == Recurrence.NONE) raw
+                else DueDates.currentPeriodDue(card.dueDay, card.dueMonth, card.recurrence, raw)
                 listOf(
                     Payment(
                         periodEpochDay = period.toEpochDay(),
@@ -293,8 +295,16 @@ object ImportParser {
         val byPeriod = LinkedHashMap<Long, Payment>()
         sorted.forEach { row ->
             if (!row.paid) return@forEach
-            val period = row.dueDate ?: row.paidDate ?: return@forEach
-            val paidAt = row.paidDate ?: period
+            val paidAt = row.paidDate ?: row.dueDate ?: return@forEach
+            // Дату периода приводим к числу месяца карточки: в файлах старого
+            // приложения оплаты записаны фактическим днём оплаты, который может
+            // не совпадать с числом месяца в карточке. Без этого прошлые месяцы
+            // не находили свою оплату и выглядели просроченными.
+            val period = if (recurrence == Recurrence.NONE) {
+                row.dueDate ?: paidAt
+            } else {
+                DueDates.currentPeriodDue(dueDay, dueMonth, recurrence, row.dueDate ?: paidAt)
+            }
             val amountMinor = row.paidAmountMinor.takeIf { it > 0L }
                 ?: row.amountMinor.takeIf { it > 0L }
                 ?: amount

@@ -87,6 +87,29 @@ class ImportParserTest {
     }
 
     @Test
+    fun `оплаты подтягиваются к числу месяца карточки`() {
+        // В старом файле оплата записана фактическим днём (22-е), а срок в
+        // карточке — 2-е число. Период должен привестись к 2-му числу месяца.
+        val csv = "\uFEFF" + legacyHeader + "\n" +
+            "Совкомбанк;22.10.2025;14000;Фиксированная;14000;22.10.2025;Оплачен;Ежемесячно;22.11.2025;landmark;3;\n" +
+            "Совкомбанк;22.11.2025;14000;Фиксированная;14000;22.11.2025;Оплачен;Ежемесячно;22.12.2025;landmark;3;\n" +
+            "Совкомбанк;02.12.2025;14000;Фиксированная;0;;Запланирован;Ежемесячно;02.01.2026;landmark;3;\n"
+
+        val cards = ImportParser.parseCsv(csv)
+
+        assertEquals(1, cards.size)
+        val card = cards.first().card
+        assertEquals(2, card.dueDay)
+        val periods = cards.first().payments
+            .map { LocalDate.ofEpochDay(it.periodEpochDay) }
+            .sorted()
+        assertEquals(
+            listOf(LocalDate.of(2025, 10, 2), LocalDate.of(2025, 11, 2)),
+            periods,
+        )
+    }
+
+    @Test
     fun `собственный формат читается с историей оплат`() {
         val csv = "Название;Сумма;Число месяца;Месяц;Повтор;Значок;Напоминание;" +
             "Напомнить за (дней);Время;Заметка;История оплат\n" +
