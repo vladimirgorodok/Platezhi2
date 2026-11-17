@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import ru.platezhi2.app.Platezhi2App
+import ru.platezhi2.app.ui.data.CloudFolderViewModel
 import ru.platezhi2.app.ui.data.DataViewModel
 import ru.platezhi2.app.ui.edit.PaymentEditViewModel
 import ru.platezhi2.app.ui.home.HomeViewModel
@@ -18,6 +19,7 @@ object AppViewModelProvider {
         initializer { HomeViewModel(app().container) }
         initializer { PaymentEditViewModel(app().container, createSavedStateHandle()) }
         initializer { DataViewModel(app().container) }
+        initializer { CloudFolderViewModel(app().container) }
         initializer { SettingsViewModel(app().container) }
     }
 }

@@ -4,14 +4,19 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.platezhi2.app.core.AppContainer
+import ru.platezhi2.app.data.cloud.CloudSyncCoordinator
+import ru.platezhi2.app.data.settings.AppSettings
 import ru.platezhi2.app.data.transfer.BackupFile
 import ru.platezhi2.app.reminders.Reminders
 
@@ -29,6 +34,35 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
     val cloudFolderUri: StateFlow<String?> = container.settingsRepository.settings
         .map { it.cloudFolderUri }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    // ---- Яндекс Диск ----
+
+    val cloudSettings: StateFlow<AppSettings> = container.settingsRepository.settings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
+
+    val cloudStatus: StateFlow<CloudSyncCoordinator.Status> = container.cloudCoordinator.status
+
+    /** Поля ввода держим отдельно, чтобы ввод не «дёргался» при сохранении. */
+    private val _login = MutableStateFlow("")
+    val login: StateFlow<String> = _login.asStateFlow()
+
+    private val _password = MutableStateFlow("")
+    val password: StateFlow<String> = _password.asStateFlow()
+
+    private var fieldsLoaded = false
+    private var loginSave: Job? = null
+    private var passwordSave: Job? = null
+
+    init {
+        viewModelScope.launch {
+            val current = container.settingsRepository.settings.first()
+            if (!fieldsLoaded) {
+                _login.value = current.yandexLogin
+                _password.value = current.yandexPassword
+                fieldsLoaded = true
+            }
+        }
+    }
 
     fun clearMessage() {
         _message.value = null
@@ -123,6 +157,109 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
                 .onFailure { _message.value = "Ошибка экспорта: ${it.message}" }
             _busy.value = false
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Яндекс Диск
+    // ------------------------------------------------------------------
+
+    fun setLogin(value: String) {
+        _login.value = value
+        loginSave?.cancel()
+        loginSave = viewModelScope.launch {
+            delay(500)
+            container.settingsRepository.setYandexLogin(value)
+        }
+    }
+
+    fun setPassword(value: String) {
+        _password.value = value
+        passwordSave?.cancel()
+        passwordSave = viewModelScope.launch {
+            delay(500)
+            container.settingsRepository.setYandexPassword(value)
+        }
+    }
+
+    fun flushCredentials() {
+        loginSave?.cancel()
+        passwordSave?.cancel()
+        viewModelScope.launch {
+            container.settingsRepository.setYandexLogin(_login.value)
+            container.settingsRepository.setYandexPassword(_password.value)
+        }
+    }
+
+    fun setAutoSync(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsRepository.setAutoSync(enabled)
+            if (!enabled) return@launch
+            // При включении: если на устройстве уже есть платежи — считаем их свежими
+            // и при следующем запуске выгрузим. Если данных нет — сначала загрузим из облака.
+            val hasLocalData = container.paymentRepository.getCards().isNotEmpty()
+            container.settingsRepository.setCloudDirty(hasLocalData)
+        }
+    }
+
+    fun setKeepCopies(count: Int) {
+        viewModelScope.launch { container.settingsRepository.setCloudKeepCopies(count) }
+    }
+
+    fun checkCloudConnection() {
+        val loginValue = _login.value
+        val passwordValue = _password.value
+        val folder = cloudSettings.value.cloudFolder
+        viewModelScope.launch {
+            container.settingsRepository.setYandexLogin(loginValue)
+            container.settingsRepository.setYandexPassword(passwordValue)
+            val result = container.cloudCoordinator.checkConnection(loginValue, passwordValue, folder)
+            result.onSuccess { _message.value = it }
+                .onFailure { _message.value = it.message ?: "Не удалось подключиться" }
+        }
+    }
+
+    /** Список копий платежей в облаке (для диалога «что загружать»). */
+    private val _cloudSnapshots = MutableStateFlow(emptyList<ru.platezhi2.app.data.cloud.RemoteEntry>())
+    val cloudSnapshots: StateFlow<List<ru.platezhi2.app.data.cloud.RemoteEntry>> =
+        _cloudSnapshots.asStateFlow()
+
+    fun loadCloudSnapshots() {
+        viewModelScope.launch {
+            val result = container.cloudCoordinator.loadSnapshots()
+            result.onSuccess { list ->
+                _cloudSnapshots.value = list
+                if (list.isEmpty()) _message.value = "В облачной папке нет копий"
+            }.onFailure { _message.value = it.message ?: "Не удалось прочитать папку" }
+        }
+    }
+
+    fun dismissCloudSnapshots() {
+        _cloudSnapshots.value = emptyList()
+    }
+
+    fun pushToCloud() {
+        viewModelScope.launch {
+            container.cloudCoordinator.manualPush()
+                .onSuccess { _message.value = "Данные и значки сохранены в облако" }
+                .onFailure { _message.value = it.message ?: "Не удалось сохранить в облако" }
+        }
+    }
+
+    fun pullFromCloud() {
+        viewModelScope.launch {
+            _busy.value = true
+            container.cloudCoordinator.manualPull()
+                .onSuccess { rescheduleReminders() }
+            _busy.value = false
+        }
+    }
+
+    fun pushIconsToCloud() {
+        viewModelScope.launch { container.cloudCoordinator.manualIconsPush() }
+    }
+
+    fun restoreIconsFromCloud() {
+        viewModelScope.launch { container.cloudCoordinator.manualIconsRestore() }
     }
 
     private suspend fun rescheduleReminders() {

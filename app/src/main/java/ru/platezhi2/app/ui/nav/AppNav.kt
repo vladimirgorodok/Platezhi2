@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.platezhi2.app.core.AppContainer
+import ru.platezhi2.app.ui.data.CloudFolderScreen
 import ru.platezhi2.app.ui.data.DataScreen
 import ru.platezhi2.app.ui.edit.PaymentEditScreen
 import ru.platezhi2.app.ui.home.HomeScreen
@@ -17,6 +18,7 @@ object Routes {
     const val EDIT = "edit"
     const val DATA = "data"
     const val SETTINGS = "settings"
+    const val CLOUD_FOLDER = "cloud_folder"
     const val ARG_ID = "id"
 
     fun edit(id: Long): String = "$EDIT/$id"
@@ -45,7 +47,14 @@ fun AppNavHost(container: AppContainer) {
         }
 
         composable(Routes.DATA) {
-            DataScreen(onBack = { navController.popBackStack() })
+            DataScreen(
+                onBack = { navController.popBackStack() },
+                onPickCloudFolder = { navController.navigate(Routes.CLOUD_FOLDER) },
+            )
+        }
+
+        composable(Routes.CLOUD_FOLDER) {
+            CloudFolderScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Routes.SETTINGS) {

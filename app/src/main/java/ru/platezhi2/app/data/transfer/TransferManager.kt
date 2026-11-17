@@ -13,8 +13,11 @@ import ru.platezhi2.app.data.model.Card
 import ru.platezhi2.app.data.model.Payment
 import ru.platezhi2.app.data.model.Recurrence
 import ru.platezhi2.app.data.repo.PaymentRepository
+import ru.platezhi2.app.media.ImageScaling
+import ru.platezhi2.app.media.ImageStore
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.Base64
 
 /** Файл резервной копии в облачной папке. */
 data class BackupFile(val name: String, val uri: Uri, val modified: Long)
@@ -32,10 +35,14 @@ data class BackupFile(val name: String, val uri: Uri, val modified: Long)
 class TransferManager(
     private val context: Context,
     private val repo: PaymentRepository,
+    private val images: ImageStore,
 ) {
 
     companion object {
         private const val BOM = "\uFEFF"
+
+        /** Больше этой картинки в копию не встраиваем (иначе копия станет огромной). */
+        private const val MAX_IMAGE_BYTES = 3 * 1024 * 1024
 
         private val HEADER = listOf(
             "Название", "Сумма", "Число месяца", "Месяц", "Повтор", "Значок",
@@ -101,7 +108,10 @@ class TransferManager(
         return root.toString(2)
     }
 
-    private fun cardJson(card: Card, history: List<Payment>): JSONObject = JSONObject().apply {
+    /** Текст резервной копии: используется и для файлов, и для облачной синхронизации. */
+    suspend fun snapshotJson(): String = buildJsonText()
+
+    private suspend fun cardJson(card: Card, history: List<Payment>): JSONObject = JSONObject().apply {
         put("title", card.title)
         put("amountMinor", card.amountMinor)
         put("dueDay", card.dueDay)
@@ -113,6 +123,12 @@ class TransferManager(
         put("reminderDaysBefore", card.reminderDaysBefore)
         put("reminderHour", card.reminderHour)
         put("reminderMinute", card.reminderMinute)
+        // Картинка-иконка встраивается в копию: иначе значок не перенёсся бы
+        // на другое устройство (там нет файла по этому пути).
+        images.readBytes(card.imagePath)
+            ?.let { bytes -> ImageScaling.shrink(bytes) ?: bytes }
+            ?.takeIf { it.size <= MAX_IMAGE_BYTES }
+            ?.let { bytes -> put("image", Base64.getEncoder().encodeToString(bytes)) }
         put(
             "payments",
             JSONArray().apply {
@@ -172,11 +188,17 @@ class TransferManager(
      * Импортирует данные, распознавая формат автоматически.
      * Возвращает число добавленных карточек.
      */
-    suspend fun importFrom(uri: Uri, replaceAll: Boolean): Int = withContext(Dispatchers.IO) {
-        val raw = context.contentResolver.openInputStream(uri)?.use {
-            it.readBytes().toString(Charsets.UTF_8)
-        } ?: error("Не удалось прочитать файл")
+    suspend fun importFrom(uri: Uri, replaceAll: Boolean): Int {
+        val raw = withContext(Dispatchers.IO) {
+            context.contentResolver.openInputStream(uri)?.use {
+                it.readBytes().toString(Charsets.UTF_8)
+            } ?: error("Не удалось прочитать файл")
+        }
+        return importFromText(raw, replaceAll)
+    }
 
+    /** Импорт из готового текста копии (файл уже прочитан или данные пришли из облака). */
+    suspend fun importFromText(raw: String, replaceAll: Boolean): Int = withContext(Dispatchers.IO) {
         val text = raw.removePrefix(BOM).trim()
         if (text.isEmpty()) error("Файл пуст")
 
@@ -220,7 +242,7 @@ class TransferManager(
 
     // ---------- JSON ----------
 
-    private fun parseJson(text: String): List<ImportParser.ParsedCard> {
+    private suspend fun parseJson(text: String): List<ImportParser.ParsedCard> {
         val array = if (text.startsWith("{")) {
             val root = JSONObject(text)
             root.optJSONArray("cards") ?: JSONArray().put(root)
@@ -233,7 +255,7 @@ class TransferManager(
             val o = array.optJSONObject(i) ?: continue
             val dueDay = o.optInt("dueDay", 0)
             val dueMonth = o.optInt("dueMonth", 0)
-            val card = Card(
+            var card = Card(
                 title = o.optString("title").takeIf { it.isNotBlank() }
                     ?: o.optString("name").takeIf { it.isNotBlank() }
                     ?: "",
@@ -248,6 +270,14 @@ class TransferManager(
                 reminderHour = o.optInt("reminderHour", 9).coerceIn(0, 23),
                 reminderMinute = o.optInt("reminderMinute", 0).coerceIn(0, 59),
             )
+
+            // Значок-картинка из копии: сохраняем файлом на этом устройстве.
+            o.optString("image").takeIf { it.isNotBlank() }?.let { encoded ->
+                runCatching { Base64.getDecoder().decode(encoded) }
+                    .getOrNull()
+                    ?.let { bytes -> images.saveBytes(bytes) }
+                    ?.let { path -> card = card.copy(imagePath = path) }
+            }
 
             val payments = ArrayList<Payment>()
             val arrayPayments = o.optJSONArray("payments")

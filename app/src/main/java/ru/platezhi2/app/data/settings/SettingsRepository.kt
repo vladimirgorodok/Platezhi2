@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -41,7 +42,26 @@ data class AppSettings(
     val cloudFolderUri: String? = null,
     /** Прозрачность иконки-подложки в строке платежа, проценты (90 — почти не видно). */
     val backdropTransparency: Int = 90,
-)
+
+    // ---- Яндекс Диск (синхронизация между устройствами) ----
+    val yandexLogin: String = "",
+    val yandexPassword: String = "",
+    /** Папка на Яндекс Диске, например «/Платежи2». */
+    val cloudFolder: String = DEFAULT_CLOUD_FOLDER,
+    val autoSync: Boolean = false,
+    /** Сколько последних копий хранить в облачной папке. */
+    val cloudKeepCopies: Int = 5,
+    val cloudLastSyncAt: Long = 0L,
+    /** Имя файла, который это устройство записало или прочитало последним. */
+    val cloudLastFileName: String = "",
+    /** Есть несохранённые в облако изменения (в том числе сделанные без интернета). */
+    val cloudDirty: Boolean = false,
+) {
+    val cloudConfigured: Boolean
+        get() = yandexLogin.isNotBlank() && yandexPassword.isNotBlank()
+}
+
+const val DEFAULT_CLOUD_FOLDER = "/Платежи2"
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -54,6 +74,15 @@ class SettingsRepository(private val context: Context) {
         val REMINDER_DAYS = intPreferencesKey("reminder_days")
         val CLOUD_FOLDER = stringPreferencesKey("cloud_folder")
         val BACKDROP = intPreferencesKey("backdrop_transparency")
+
+        val CLOUD_LOGIN = stringPreferencesKey("cloud_login")
+        val CLOUD_PASSWORD = stringPreferencesKey("cloud_password")
+        val YANDEX_FOLDER = stringPreferencesKey("cloud_yandex_folder")
+        val AUTO_SYNC = booleanPreferencesKey("cloud_auto_sync")
+        val KEEP_COPIES = intPreferencesKey("cloud_keep_copies")
+        val LAST_SYNC_AT = longPreferencesKey("cloud_last_sync_at")
+        val LAST_FILE = stringPreferencesKey("cloud_last_file")
+        val DIRTY = booleanPreferencesKey("cloud_dirty")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -64,6 +93,14 @@ class SettingsRepository(private val context: Context) {
             defaultReminderDaysBefore = p[Keys.REMINDER_DAYS] ?: 1,
             cloudFolderUri = p[Keys.CLOUD_FOLDER],
             backdropTransparency = (p[Keys.BACKDROP] ?: 90).coerceIn(0, 100),
+            yandexLogin = p[Keys.CLOUD_LOGIN].orEmpty().trim(),
+            yandexPassword = p[Keys.CLOUD_PASSWORD].orEmpty(),
+            cloudFolder = p[Keys.YANDEX_FOLDER].orEmpty().ifBlank { DEFAULT_CLOUD_FOLDER },
+            autoSync = p[Keys.AUTO_SYNC] ?: false,
+            cloudKeepCopies = (p[Keys.KEEP_COPIES] ?: 5).coerceIn(1, 50),
+            cloudLastSyncAt = p[Keys.LAST_SYNC_AT] ?: 0L,
+            cloudLastFileName = p[Keys.LAST_FILE].orEmpty(),
+            cloudDirty = p[Keys.DIRTY] ?: false,
         )
     }
 
@@ -92,4 +129,47 @@ class SettingsRepository(private val context: Context) {
             if (uri == null) prefs.remove(Keys.CLOUD_FOLDER) else prefs[Keys.CLOUD_FOLDER] = uri
         }
     }
+
+    // ---- Яндекс Диск ----
+
+    suspend fun setYandexLogin(login: String) {
+        context.dataStore.edit { it[Keys.CLOUD_LOGIN] = login.trim() }
+    }
+
+    suspend fun setYandexPassword(password: String) {
+        context.dataStore.edit { it[Keys.CLOUD_PASSWORD] = password.trim() }
+    }
+
+    suspend fun setYandexFolder(path: String) {
+        context.dataStore.edit { it[Keys.YANDEX_FOLDER] = normalizeCloudFolder(path) }
+    }
+
+    suspend fun setAutoSync(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_SYNC] = enabled }
+    }
+
+    suspend fun setCloudKeepCopies(count: Int) {
+        context.dataStore.edit { it[Keys.KEEP_COPIES] = count.coerceIn(1, 50) }
+    }
+
+    /** Состояние синхронизации: отметка времени и имя последней копии. */
+    suspend fun setCloudSynced(fileName: String, atMillis: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.LAST_FILE] = fileName
+            prefs[Keys.LAST_SYNC_AT] = atMillis
+            prefs[Keys.DIRTY] = false
+        }
+    }
+
+    suspend fun setCloudDirty(dirty: Boolean) {
+        context.dataStore.edit { it[Keys.DIRTY] = dirty }
+    }
+}
+
+/** Приводит путь к виду «/Папка/Вложенная»: с ведущим слэшем и без хвостового. */
+fun normalizeCloudFolder(path: String): String {
+    val trimmed = path.trim().replace('\\', '/')
+    val withSlash = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
+    val collapsed = withSlash.replace(Regex("/{2,}"), "/")
+    return collapsed.trimEnd('/').ifBlank { "/" }
 }

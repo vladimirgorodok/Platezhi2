@@ -17,8 +17,8 @@ android {
         applicationId = "ru.platezhi2.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.10"
+        versionCode = 12
+        versionName = "1.12"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -89,9 +89,15 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // WebDAV-клиент для Яндекс Диска (PROPFIND/MKCOL/MOVE и др.).
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    // Реальные реализации XML и JSON для unit-тестов: в android.jar это лишь заглушки.
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
+    testImplementation("org.json:json:20240303")
 }

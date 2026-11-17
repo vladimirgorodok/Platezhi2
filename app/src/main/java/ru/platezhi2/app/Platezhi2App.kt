@@ -13,5 +13,6 @@ class Platezhi2App : Application() {
         super.onCreate()
         container = AppContainer(this)
         Reminders.ensureChannel(this)
+        container.cloudCoordinator.start()
     }
 }

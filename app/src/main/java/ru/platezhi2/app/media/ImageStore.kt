@@ -15,11 +15,36 @@ class ImageStore(private val context: Context) {
     /** Копирует выбранное изображение во внутреннее хранилище и возвращает путь. */
     suspend fun importImage(uri: Uri): String? = withContext(Dispatchers.IO) {
         runCatching {
+            val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: return@runCatching null
+            // Храним уменьшенную копию: в списке значок мелкий, а синхронизация легче.
+            val bytes = ImageScaling.shrink(raw) ?: raw
             val target = File(dir, "icon_${System.currentTimeMillis()}.img")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
-            } ?: return@runCatching null
+            target.outputStream().use { it.write(bytes) }
             target.absolutePath
         }.getOrNull()
+    }
+
+    /**
+     * Сохраняет готовые байты картинки (например, распакованные из облачной копии)
+     * и возвращает путь к файлу.
+     */
+    suspend fun saveBytes(bytes: ByteArray): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val target = File(dir, "icon_${System.currentTimeMillis()}_${bytes.size}.img")
+            target.outputStream().use { it.write(bytes) }
+            target.absolutePath
+        }.getOrNull()
+    }
+
+    /** Читает байты картинки по пути из хранилища. Возвращает null, если файла нет. */
+    suspend fun readBytes(path: String?): ByteArray? = withContext(Dispatchers.IO) {
+        if (path.isNullOrBlank()) return@withContext null
+        runCatching { File(path).takeIf { it.isFile }?.readBytes() }.getOrNull()
+    }
+
+    /** Есть ли картинка по указанному пути на этом устройстве. */
+    suspend fun exists(path: String?): Boolean = withContext(Dispatchers.IO) {
+        !path.isNullOrBlank() && File(path).isFile
     }
 }
