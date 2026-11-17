@@ -84,13 +84,15 @@ class CloudSync(
     suspend fun listIconArchives(folder: String? = null): List<RemoteEntry> =
         iconArchivesIn(clientFromSettings(), folder?.let(::normalizeCloudFolder) ?: folder())
 
+    /** Копии платежей в папке. Ошибку сети не скрываем: о ней нужно сказать пользователю. */
     private suspend fun snapshotsIn(client: YandexDiskClient, folder: String): List<RemoteEntry> =
-        runCatching { client.list(folder) }.getOrDefault(emptyList())
+        client.list(folder)
             .filter { !it.isDirectory && it.name.startsWith(PREFIX) && it.name.endsWith(SUFFIX, true) }
             .sortedByDescending { it.name }
 
+    /** Архивы значков в папке. */
     private suspend fun iconArchivesIn(client: YandexDiskClient, folder: String): List<RemoteEntry> =
-        runCatching { client.list(folder) }.getOrDefault(emptyList())
+        client.list(folder)
             .filter { !it.isDirectory && it.name.startsWith(ICON_PREFIX) && it.name.endsWith(ICON_SUFFIX, true) }
             .sortedByDescending { it.name }
 
@@ -110,9 +112,10 @@ class CloudSync(
         client.upload("$target/$dataName", transfer.snapshotJson().toByteArray(Charsets.UTF_8))
         val iconsName = uploadIcons(client, target, now)
 
+        // Чистка старых копий не должна считаться ошибкой выгрузки.
         val keep = current.cloudKeepCopies.coerceIn(1, 50)
-        snapshotsIn(client, target).drop(keep).forEach { runCatching { client.delete(it.path) } }
-        iconArchivesIn(client, target).drop(keep).forEach { runCatching { client.delete(it.path) } }
+        runCatching { snapshotsIn(client, target).drop(keep).forEach { client.delete(it.path) } }
+        runCatching { iconArchivesIn(client, target).drop(keep).forEach { client.delete(it.path) } }
 
         settings.setCloudSynced(dataName, System.currentTimeMillis())
         return CloudPushResult(dataName, iconsName)
@@ -126,7 +129,7 @@ class CloudSync(
         client.createFolderChain(target)
         val name = uploadIcons(client, target, LocalDateTime.now())
         val keep = current.cloudKeepCopies.coerceIn(1, 50)
-        iconArchivesIn(client, target).drop(keep).forEach { runCatching { client.delete(it.path) } }
+        runCatching { iconArchivesIn(client, target).drop(keep).forEach { client.delete(it.path) } }
         return name
     }
 

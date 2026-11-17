@@ -1,12 +1,12 @@
 package ru.platezhi2.app.data.cloud
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -61,13 +61,18 @@ class CloudSyncCoordinator(
             repo.changes.collect {
                 if (System.currentTimeMillis() < ignoreWritesUntil) return@collect
                 settings.setCloudDirty(true)
-                writes.value = System.currentTimeMillis()
+                writes.value = writes.value + 1
             }
         }
+        // Ждём «тишины» после правок и только потом выгружаем: уже начатая
+        // выгрузка не отменяется новыми изменениями.
         scope.launch {
-            writes.collectLatest { stamp ->
-                if (stamp == 0L) return@collectLatest
+            var handled = 0L
+            while (true) {
+                val stamp = writes.first { it != 0L && it != handled }
+                handled = stamp
                 delay(WRITE_DELAY_MS)
+                if (writes.value != handled) continue
                 pushQuietly()
             }
         }
@@ -79,13 +84,39 @@ class CloudSyncCoordinator(
         scope.launch { pushQuietly() }
     }
 
+    /**
+     * Вызывается, когда приложение снова на экране. Только выгружаем свои правки:
+     * данные на экране не подменяются (импорт из облака — при запуске приложения).
+     */
+    fun onAppForeground() {
+        scope.launch { pushQuietly() }
+    }
+
     // ------------------------------------------------------------------
     // Действия пользователя
     // ------------------------------------------------------------------
 
+    /** Запускает выгрузку в общем (приложенческом) скоупе: уход с экрана её не отменит. */
+    fun pushInBackground() {
+        scope.launch { manualPush() }
+    }
+
+    /** Запускает загрузку из облака в общем скоупе. */
+    fun pullInBackground() {
+        scope.launch { manualPull() }
+    }
+
+    fun iconsPushInBackground() {
+        scope.launch { manualIconsPush() }
+    }
+
+    fun iconsRestoreInBackground() {
+        scope.launch { manualIconsRestore() }
+    }
+
     suspend fun manualPush(): Result<CloudPushResult> {
         _status.value = Status(busy = true)
-        val result = runCatching { pushInternal() }
+        val result = attempt { pushInternal() }
         _status.value = Status(
             busy = false,
             message = result.fold(
@@ -103,7 +134,7 @@ class CloudSyncCoordinator(
     /** Отдельно выгрузить базу значков. */
     suspend fun manualIconsPush(): Result<String?> {
         _status.value = Status(busy = true)
-        val result = runCatching { mutex.withLock { sync.pushIcons() } }
+        val result = attempt { mutex.withLock { sync.pushIcons() } }
         _status.value = Status(
             busy = false,
             message = result.fold(
@@ -118,7 +149,7 @@ class CloudSyncCoordinator(
     /** Отдельно подтянуть значки из облака. */
     suspend fun manualIconsRestore(): Result<Int> {
         _status.value = Status(busy = true)
-        val result = runCatching { mutex.withLock { sync.pullIcons(onlyMissing = true) } }
+        val result = attempt { mutex.withLock { sync.pullIcons(onlyMissing = true) } }
         _status.value = Status(
             busy = false,
             message = result.fold(
@@ -134,7 +165,7 @@ class CloudSyncCoordinator(
 
     suspend fun manualPull(): Result<CloudPullResult> {
         _status.value = Status(busy = true)
-        val result = runCatching { pullInternal() }
+        val result = attempt { pullInternal() }
         _status.value = Status(
             busy = false,
             message = result.fold(
@@ -148,9 +179,14 @@ class CloudSyncCoordinator(
         return result
     }
 
+    /** Проверка подключения из интерфейса (не отменяется при уходе с экрана). */
+    fun checkInBackground(login: String, password: String, folder: String) {
+        scope.launch { checkConnection(login, password, folder) }
+    }
+
     suspend fun checkConnection(login: String, password: String, folder: String): Result<String> {
         _status.value = Status(busy = true)
-        val result = runCatching { sync.checkConnection(login, password, folder) }
+        val result = attempt { sync.checkConnection(login, password, folder) }
         _status.value = Status(
             busy = false,
             message = result.getOrElse { it.message ?: "Не удалось подключиться" },
@@ -160,9 +196,9 @@ class CloudSyncCoordinator(
     }
 
     suspend fun loadFolders(path: String): Result<List<RemoteEntry>> =
-        runCatching { sync.listFolders(path) }
+        attempt { sync.listFolders(path) }
 
-    suspend fun loadSnapshots(): Result<List<RemoteEntry>> = runCatching { sync.listSnapshots() }
+    suspend fun loadSnapshots(): Result<List<RemoteEntry>> = attempt { sync.listSnapshots() }
 
     suspend fun clearMessage() {
         _status.value = _status.value.copy(message = null)
@@ -179,23 +215,32 @@ class CloudSyncCoordinator(
         if (current.cloudDirty) {
             // Страховка для нового устройства: пустые локальные данные не выгружаем,
             // иначе можно затереть облако, где уже лежат платежи с другого устройства.
-            val cloudHasCopies = runCatching { sync.newestSnapshotName() }.getOrNull() != null
+            val cloudHasCopies = attempt { sync.newestSnapshotName() }.getOrNull() != null
             if (repo.getCards().isEmpty() && cloudHasCopies) {
-                runCatching { pullInternal() }.onFailure { reportFailure(it) }
-                return
+                attempt { pullInternal() }.onFailure { reportFailure(it) }
+            } else {
+                attempt { pushInternal() }.onFailure { reportFailure(it) }
             }
-            runCatching { pushInternal() }.onFailure { reportFailure(it) }
             return
         }
-        val newest = runCatching { sync.newestSnapshotName() }.getOrNull() ?: return
+
+        val newest = attempt { sync.newestSnapshotName() }.getOrElse { error ->
+            reportFailure(error)
+            return
+        }
         if (newest == current.cloudLastFileName) return
-        runCatching { pullInternal() }.onFailure { reportFailure(it) }
+        if (newest == null) {
+            // В облаке ещё нет копий — выгружаем свои данные.
+            attempt { pushInternal() }.onFailure { reportFailure(it) }
+            return
+        }
+        attempt { pullInternal() }.onFailure { reportFailure(it) }
     }
 
     private suspend fun pushQuietly() {
         val current = settings.settings.first()
         if (!current.autoSync || !current.cloudConfigured || !current.cloudDirty) return
-        runCatching { pushInternal() }.onFailure { reportFailure(it) }
+        attempt { pushInternal() }.onFailure { reportFailure(it) }
     }
 
     private suspend fun pushInternal(): CloudPushResult = mutex.withLock {
@@ -214,10 +259,25 @@ class CloudSyncCoordinator(
     }
 
     private fun reportFailure(error: Throwable) {
+        if (error is CancellationException) return
         _status.value = Status(
             busy = false,
-            message = error.message ?: "Ошибка синхронизации с Яндекс Диском",
+            message = friendlyMessage(error),
             failed = true,
         )
+    }
+
+    private fun friendlyMessage(error: Throwable): String = when {
+        error is CloudException -> error.message ?: "Ошибка Яндекс Диска"
+        else -> error.message ?: "Ошибка синхронизации с Яндекс Диском"
+    }
+
+    /** Как runCatching, но отмена корутины не превращается в «ошибку». */
+    private suspend fun <T> attempt(block: suspend () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Throwable) {
+        Result.failure(error)
     }
 }

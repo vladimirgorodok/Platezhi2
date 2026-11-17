@@ -378,9 +378,9 @@ private fun CloudCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = "Пароль приложения — не обычный пароль от Яндекс ID. Создайте его " +
-                    "с типом «WebDAV-клиент для Яндекс Диска». Новый пароль начинает " +
-                    "работать через 2–3 часа после создания.",
+                text = "Пароль приложения — не обычный пароль от Яндекс ID. Тип — " +
+                    "«WebDAV-клиент для Яндекс Диска». Новый пароль начинает работать " +
+                    "через 2–3 часа.",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -412,8 +412,8 @@ private fun CloudCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Автосинхронизация", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = "При запуске — свежие данные из облака, после изменений — " +
-                            "новая копия. Без интернета обмен случится при следующем запуске.",
+                        text = "При запуске — свежие данные из облака, изменения уходят " +
+                            "в облако сами. Без интернета — при следующем запуске.",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -493,7 +493,7 @@ private fun CloudCard(
             )
             if (settings.cloudDirty) {
                 Text(
-                    text = "Есть невыгруженные изменения — уйдут в облако при следующей синхронизации.",
+                    text = "Есть невыгруженные изменения — уйдут в облако при следующем обмене.",
                     style = MaterialTheme.typography.labelMedium,
                     color = palette.accent,
                 )

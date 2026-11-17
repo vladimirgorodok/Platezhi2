@@ -1,11 +1,13 @@
 package ru.platezhi2.app.data.repo
 
+import androidx.room.withTransaction
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.map
+import ru.platezhi2.app.data.db.AppDatabase
 import ru.platezhi2.app.data.db.CardDao
 import ru.platezhi2.app.data.db.CardEntity
 import ru.platezhi2.app.data.db.PaymentDao
@@ -21,6 +23,7 @@ import ru.platezhi2.app.data.model.Payment
  * Карточка — шаблон платежа, оплат по ней может быть много.
  */
 class PaymentRepository(
+    private val db: AppDatabase,
     private val cardDao: CardDao,
     private val paymentDao: PaymentDao,
 ) {
@@ -112,16 +115,39 @@ class PaymentRepository(
 
     // ---- Массовые операции (импорт) ----
 
-    suspend fun clearAll() {
-        paymentDao.clear()
-        cardDao.clear()
+    /**
+     * Полностью заменяет данные одной транзакцией.
+     *
+     * Если вставка сорвётся (например, из-за нехватки места), база останется
+     * прежней — платежи не исчезнут. [paymentsFor] получает новые номера
+     * карточек в том же порядке, что и переданный список.
+     */
+    suspend fun replaceAll(cards: List<Card>, paymentsFor: (List<Long>) -> List<Payment>): Int {
+        val count = db.withTransaction {
+            paymentDao.clear()
+            cardDao.clear()
+            val ids = insertCardsInternal(cards)
+            insertPaymentsInternal(paymentsFor(ids))
+            ids.size
+        }
         notifyChanged()
+        return count
     }
 
-    /** Вставляет карточки и возвращает их новые идентификаторы в том же порядке. */
-    suspend fun insertCards(cards: List<Card>): List<Long> {
+    /** Добавляет карточки с оплатами, не трогая существующие (одной транзакцией). */
+    suspend fun appendAll(cards: List<Card>, paymentsFor: (List<Long>) -> List<Payment>): Int {
+        val count = db.withTransaction {
+            val ids = insertCardsInternal(cards)
+            insertPaymentsInternal(paymentsFor(ids))
+            ids.size
+        }
+        notifyChanged()
+        return count
+    }
+
+    private suspend fun insertCardsInternal(cards: List<Card>): List<Long> {
         val now = System.currentTimeMillis()
-        val ids = cardDao.insertAll(
+        return cardDao.insertAll(
             cards.map { card ->
                 card.copy(
                     id = 0L,
@@ -130,17 +156,14 @@ class PaymentRepository(
                 ).toEntity()
             }
         )
-        notifyChanged()
-        return ids
     }
 
-    suspend fun insertPayments(payments: List<Payment>) {
+    private suspend fun insertPaymentsInternal(payments: List<Payment>) {
         val now = System.currentTimeMillis()
         paymentDao.insertAll(
             payments.map { payment ->
                 payment.copy(id = 0L, createdAt = if (payment.createdAt == 0L) now else payment.createdAt).toEntity()
             }
         )
-        notifyChanged()
     }
 }

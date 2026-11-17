@@ -51,6 +51,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Вернулись в приложение — досылаем невыгруженные правки (если включена автосинхронизация).
+        container.cloudCoordinator.onAppForeground()
+    }
+
     override fun onStop() {
         super.onStop()
         // Уходя в фон, сохраняем изменения в облако (если включена автосинхронизация).

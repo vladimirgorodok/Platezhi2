@@ -50,9 +50,6 @@ class TransferManager(
         )
 
         private val LEGACY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-
-        private fun normalizeTitle(title: String): String =
-            title.trim().lowercase().replace(Regex("\\s+"), " ")
     }
 
     // ------------------------------------------------------------------
@@ -213,31 +210,29 @@ class TransferManager(
         }
         if (meaningful.isEmpty()) error("Не удалось распознать формат файла")
 
-        if (replaceAll) repo.clearAll()
-
-        // Защита от повторного импорта одного и того же файла.
-        val seen = if (replaceAll) HashSet() else repo.getCards().mapTo(HashSet()) { cardKey(it) }
+        // Защита от повторного импорта одного и того же файла. При замене
+        // отбрасываем только полностью одинаковые карточки, чтобы не потерять
+        // разные платежи с похожими названиями.
+        val seen = if (replaceAll) HashSet() else repo.getCards().mapTo(HashSet()) { CardKeys.loose(it) }
         val toInsert = ArrayList<ImportParser.ParsedCard>()
         meaningful.forEach { imported ->
-            if (seen.add(cardKey(imported.card))) toInsert.add(imported)
+            val key = if (replaceAll) CardKeys.full(imported) else CardKeys.loose(imported.card)
+            if (seen.add(key)) toInsert.add(imported)
         }
 
-        val newIds = repo.insertCards(toInsert.map { it.card })
-        val payments = ArrayList<Payment>()
-        toInsert.forEachIndexed { index, imported ->
-            val cardId = newIds.getOrNull(index) ?: return@forEachIndexed
-            imported.payments.forEach { payment -> payments += payment.copy(cardId = cardId) }
+        val buildPayments: (List<Long>) -> List<Payment> = { ids ->
+            val payments = ArrayList<Payment>()
+            toInsert.forEachIndexed { index, imported ->
+                val cardId = ids.getOrNull(index) ?: return@forEachIndexed
+                imported.payments.forEach { payment -> payments += payment.copy(cardId = cardId) }
+            }
+            payments
         }
-        repo.insertPayments(payments)
-        toInsert.size
-    }
 
-    private fun cardKey(card: Card): String = buildString {
-        append(normalizeTitle(card.title)).append('|')
-        append(card.amountMinor).append('|')
-        append(card.dueDay).append('|')
-        append(card.dueMonth).append('|')
-        append(card.recurrence.key)
+        // Очистка/вставка идут одной транзакцией: если запись сорвётся,
+        // прежние данные останутся на месте.
+        val cards = toInsert.map { it.card }
+        if (replaceAll) repo.replaceAll(cards, buildPayments) else repo.appendAll(cards, buildPayments)
     }
 
     // ---------- JSON ----------

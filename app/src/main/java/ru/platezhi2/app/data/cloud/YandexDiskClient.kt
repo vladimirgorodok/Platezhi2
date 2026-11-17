@@ -1,5 +1,6 @@
 package ru.platezhi2.app.data.cloud
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
@@ -7,6 +8,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -180,12 +184,24 @@ class YandexDiskClient(
     }
 
     private suspend fun call(request: Request): HttpResult = withContext(Dispatchers.IO) {
-        http.newCall(request).execute().use { response ->
-            HttpResult(
-                code = response.code,
-                body = response.body?.bytes() ?: ByteArray(0),
-                location = response.header("Location"),
+        try {
+            http.newCall(request).execute().use { response ->
+                HttpResult(
+                    code = response.code,
+                    body = response.body?.bytes() ?: ByteArray(0),
+                    location = response.header("Location"),
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (noHost: UnknownHostException) {
+            throw CloudException(
+                "Не удалось найти сервер Яндекс Диска — проверьте интернет. Обмен повторится позже",
             )
+        } catch (timeout: SocketTimeoutException) {
+            throw CloudException("Яндекс Диск не ответил вовремя — проверьте интернет")
+        } catch (network: IOException) {
+            throw CloudException("Ошибка сети при обмене с Яндекс Диском: ${network.message}")
         }
     }
 

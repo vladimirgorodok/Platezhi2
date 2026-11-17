@@ -212,9 +212,8 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.settingsRepository.setYandexLogin(loginValue)
             container.settingsRepository.setYandexPassword(passwordValue)
-            val result = container.cloudCoordinator.checkConnection(loginValue, passwordValue, folder)
-            result.onSuccess { _message.value = it }
-                .onFailure { _message.value = it.message ?: "Не удалось подключиться" }
+            // Сама проверка идёт в общем скоупе приложения: уход с экрана её не отменит.
+            container.cloudCoordinator.checkInBackground(loginValue, passwordValue, folder)
         }
     }
 
@@ -237,30 +236,14 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
         _cloudSnapshots.value = emptyList()
     }
 
-    fun pushToCloud() {
-        viewModelScope.launch {
-            container.cloudCoordinator.manualPush()
-                .onSuccess { _message.value = "Данные и значки сохранены в облако" }
-                .onFailure { _message.value = it.message ?: "Не удалось сохранить в облако" }
-        }
-    }
+    // Обмен с облаком идёт в общем скоупе приложения: уход с экрана его не отменит.
+    fun pushToCloud() = container.cloudCoordinator.pushInBackground()
 
-    fun pullFromCloud() {
-        viewModelScope.launch {
-            _busy.value = true
-            container.cloudCoordinator.manualPull()
-                .onSuccess { rescheduleReminders() }
-            _busy.value = false
-        }
-    }
+    fun pullFromCloud() = container.cloudCoordinator.pullInBackground()
 
-    fun pushIconsToCloud() {
-        viewModelScope.launch { container.cloudCoordinator.manualIconsPush() }
-    }
+    fun pushIconsToCloud() = container.cloudCoordinator.iconsPushInBackground()
 
-    fun restoreIconsFromCloud() {
-        viewModelScope.launch { container.cloudCoordinator.manualIconsRestore() }
-    }
+    fun restoreIconsFromCloud() = container.cloudCoordinator.iconsRestoreInBackground()
 
     private suspend fun rescheduleReminders() {
         val cards = container.paymentRepository.getCards()

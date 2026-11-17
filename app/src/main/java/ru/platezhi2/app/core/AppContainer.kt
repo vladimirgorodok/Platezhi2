@@ -23,6 +23,7 @@ class AppContainer(context: Context) {
     private val database: AppDatabase = AppDatabase.get(appContext)
 
     val paymentRepository: PaymentRepository = PaymentRepository(
+        db = database,
         cardDao = database.cardDao(),
         paymentDao = database.paymentDao(),
     )
