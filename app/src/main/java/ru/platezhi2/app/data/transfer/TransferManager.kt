@@ -56,7 +56,7 @@ class TransferManager(
     // Экспорт
     // ------------------------------------------------------------------
 
-    suspend fun exportJson(uri: Uri) = writeText(uri, buildJsonText())
+    suspend fun exportJson(uri: Uri) = writeText(uri, buildJsonText(includeImages = true))
 
     suspend fun exportCsv(uri: Uri) = writeText(uri, buildCsvText())
 
@@ -67,7 +67,7 @@ class TransferManager(
         val name = "platezhi2-$stamp.${if (json) "json" else "csv"}"
         val mime = if (json) "application/json" else "text/csv"
         val file = dir.createFile(mime, name) ?: return@withContext null
-        val text = if (json) buildJsonText() else buildCsvText()
+        val text = if (json) buildJsonText(includeImages = true) else buildCsvText()
         context.contentResolver.openOutputStream(file.uri, "wt")
             ?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
         file.uri
@@ -91,7 +91,7 @@ class TransferManager(
         } ?: error("Не удалось открыть файл для записи")
     }
 
-    private suspend fun buildJsonText(): String {
+    private suspend fun buildJsonText(includeImages: Boolean): String {
         val cards = repo.getCards()
         val byCard = repo.getPayments().groupBy { it.cardId }
         val root = JSONObject()
@@ -99,16 +99,26 @@ class TransferManager(
         root.put(
             "cards",
             JSONArray().apply {
-                cards.forEach { card -> put(cardJson(card, byCard[card.id].orEmpty())) }
+                cards.forEach { card -> put(cardJson(card, byCard[card.id].orEmpty(), includeImages)) }
             },
         )
         return root.toString(2)
     }
 
-    /** Текст резервной копии: используется и для файлов, и для облачной синхронизации. */
-    suspend fun snapshotJson(): String = buildJsonText()
+    /**
+     * Текст копии для облака.
+     *
+     * Значки-картинки в него не вшиваются: для них есть отдельный архив значков.
+     * Так файл данных остаётся совсем маленьким и уходит на Диск мгновенно даже
+     * на слабом мобильном интернете.
+     */
+    suspend fun snapshotJson(): String = buildJsonText(includeImages = false)
 
-    private suspend fun cardJson(card: Card, history: List<Payment>): JSONObject = JSONObject().apply {
+    private suspend fun cardJson(
+        card: Card,
+        history: List<Payment>,
+        includeImages: Boolean,
+    ): JSONObject = JSONObject().apply {
         put("title", card.title)
         put("amountMinor", card.amountMinor)
         put("dueDay", card.dueDay)
@@ -120,12 +130,15 @@ class TransferManager(
         put("reminderDaysBefore", card.reminderDaysBefore)
         put("reminderHour", card.reminderHour)
         put("reminderMinute", card.reminderMinute)
-        // Картинка-иконка встраивается в копию: иначе значок не перенёсся бы
-        // на другое устройство (там нет файла по этому пути).
-        images.readBytes(card.imagePath)
-            ?.let { bytes -> ImageScaling.shrink(bytes) ?: bytes }
-            ?.takeIf { it.size <= MAX_IMAGE_BYTES }
-            ?.let { bytes -> put("image", Base64.getEncoder().encodeToString(bytes)) }
+        // В файл для пользователя значок-картинку вшиваем: иначе он не перенёсся бы
+        // на другое устройство (там нет файла по этому пути). В облачную копию —
+        // нет: значки идут отдельным архивом.
+        if (includeImages) {
+            images.readBytes(card.imagePath)
+                ?.let { bytes -> ImageScaling.shrink(bytes) ?: bytes }
+                ?.takeIf { it.size <= MAX_IMAGE_BYTES }
+                ?.let { bytes -> put("image", Base64.getEncoder().encodeToString(bytes)) }
+        }
         put(
             "payments",
             JSONArray().apply {

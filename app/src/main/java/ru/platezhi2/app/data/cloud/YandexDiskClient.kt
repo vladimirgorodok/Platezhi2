@@ -2,6 +2,7 @@ package ru.platezhi2.app.data.cloud
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,8 +40,13 @@ class YandexDiskClient(
 
     companion object {
         const val HOST = "https://webdav.yandex.ru"
-        private const val USER_AGENT = "Platezhi2/1.12 (Android)"
+        private const val USER_AGENT = "Platezhi2/1.14 (Android)"
         private const val XML = "application/xml; charset=utf-8"
+
+        /** Сколько раз повторяем запрос при сбое сети или ошибке сервера. */
+        private const val MAX_RETRIES = 1
+        private const val MAX_REDIRECTS = 3
+        private const val RETRY_DELAY_MS = 700L
 
         private val PROPFIND_BODY = """
             <?xml version="1.0" encoding="utf-8"?>
@@ -68,8 +74,9 @@ class YandexDiskClient(
 
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .writeTimeout(180, TimeUnit.SECONDS)
+        // Мобильный интернет бывает медленным: даём выгрузке время.
+        .readTimeout(150, TimeUnit.SECONDS)
+        .writeTimeout(300, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         // Перенаправления обрабатываем сами: OkHttp меняет метод на GET,
         // а для WebDAV важно сохранить PROPFIND/PUT/DELETE.
@@ -129,6 +136,19 @@ class YandexDiskClient(
         ensureSuccess(res, "Сохранение копии")
     }
 
+    /**
+     * Размер файла на Диске или null, если файла нет.
+     * Нужен, чтобы отличить «файл записался, а ответ потерялся» от настоящей ошибки.
+     */
+    suspend fun remoteSize(path: String): Long? {
+        val target = normalize(path)
+        val res = perform("PROPFIND", target, body = PROPFIND_BODY.toByteArray(), depth = 0)
+        if (res.code !in 200..299) return null
+        val entries = WebDavXml.parseMultiStatus(res.body.toString(Charsets.UTF_8))
+        return entries.firstOrNull { it.path == target }?.size
+            ?: entries.firstOrNull()?.size
+    }
+
     suspend fun download(path: String): ByteArray {
         val res = perform("GET", normalize(path))
         ensureSuccess(res, "Загрузка копии")
@@ -153,7 +173,8 @@ class YandexDiskClient(
         depth: Int? = null,
     ): HttpResult {
         var target = url(path)
-        var attempts = 0
+        var redirects = 0
+        var retries = 0
         while (true) {
             val builder = Request.Builder()
                 .url(target)
@@ -168,10 +189,27 @@ class YandexDiskClient(
             }
             builder.method(method, requestBody)
 
-            val result = call(builder.build())
+            val result = try {
+                call(builder.build())
+            } catch (network: CloudException) {
+                // Обрыв связи — пробуем ещё раз: на мобильном интернете это норма.
+                if (network.code == 0 && retries < MAX_RETRIES) {
+                    retries++
+                    delay(RETRY_DELAY_MS)
+                    continue
+                }
+                throw network
+            }
+
+            if (result.code in 500..599 && retries < MAX_RETRIES) {
+                retries++
+                delay(RETRY_DELAY_MS)
+                continue
+            }
+
             val location = result.location
-            if (result.code in 300..399 && !location.isNullOrBlank() && attempts < 3) {
-                attempts++
+            if (result.code in 300..399 && !location.isNullOrBlank() && redirects < MAX_REDIRECTS) {
+                redirects++
                 target = if (location.startsWith("http", ignoreCase = true)) {
                     location
                 } else {

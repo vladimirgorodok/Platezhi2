@@ -121,7 +121,11 @@ class CloudSyncCoordinator(
             busy = false,
             message = result.fold(
                 onSuccess = { pushed ->
-                    val icons = if (pushed.iconsName != null) " и архив значков" else ""
+                    val icons = when {
+                        pushed.iconsName != null -> " и архив значков"
+                        pushed.iconsFailed -> " (архив значков не ушёл — нажмите «Сохранить»)"
+                        else -> ""
+                    }
                     "Сохранено в облако: ${pushed.dataName}$icons"
                 },
                 onFailure = { it.message ?: "Не удалось сохранить копию" },

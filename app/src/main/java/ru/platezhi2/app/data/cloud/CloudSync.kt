@@ -1,5 +1,6 @@
 package ru.platezhi2.app.data.cloud
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import ru.platezhi2.app.data.repo.PaymentRepository
 import ru.platezhi2.app.data.settings.SettingsRepository
@@ -14,7 +15,12 @@ import java.util.Locale
 data class CloudPullResult(val fileName: String, val cards: Int, val icons: Int = 0)
 
 /** Что записалось в облако. */
-data class CloudPushResult(val dataName: String, val iconsName: String?)
+data class CloudPushResult(
+    val dataName: String,
+    val iconsName: String?,
+    /** Архив значков не ушёл, хотя свои значки есть (не критично: данные уже сохранены). */
+    val iconsFailed: Boolean = false,
+)
 
 /**
  * Обмен данными с Яндекс Диском.
@@ -109,8 +115,19 @@ class CloudSync(
 
         val now = LocalDateTime.now()
         val dataName = snapshotName(now)
-        client.upload("$target/$dataName", transfer.snapshotJson().toByteArray(Charsets.UTF_8))
-        val iconsName = uploadIcons(client, target, now)
+        uploadChecked(client, "$target/$dataName", transfer.snapshotJson().toByteArray(Charsets.UTF_8))
+
+        // Данные уже сохранены: сбой выгрузки значков не должен выглядеть
+        // как «ничего не сохранилось».
+        var iconsFailed = false
+        val iconsName = try {
+            uploadIcons(client, target, now)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            iconsFailed = true
+            null
+        }
 
         // Чистка старых копий не должна считаться ошибкой выгрузки.
         val keep = current.cloudKeepCopies.coerceIn(1, 50)
@@ -118,7 +135,7 @@ class CloudSync(
         runCatching { iconArchivesIn(client, target).drop(keep).forEach { client.delete(it.path) } }
 
         settings.setCloudSynced(dataName, System.currentTimeMillis())
-        return CloudPushResult(dataName, iconsName)
+        return CloudPushResult(dataName, iconsName, iconsFailed)
     }
 
     /** Отдельно сохраняет архив значков. null — если своих значков нет. */
@@ -140,8 +157,26 @@ class CloudSync(
     ): String? {
         val bytes = IconArchive.build(repo, images) ?: return null
         val name = iconArchiveName(at)
-        client.upload("$folder/$name", bytes)
+        uploadChecked(client, "$folder/$name", bytes)
         return name
+    }
+
+    /**
+     * Выгружает файл и проверяет результат.
+     *
+     * На мобильном интернете бывает так: файл на Диск записался, а ответ до
+     * приложения не дошёл. Тогда это не ошибка — сравниваем размер файла.
+     */
+    private suspend fun uploadChecked(client: YandexDiskClient, path: String, bytes: ByteArray) {
+        try {
+            client.upload(path, bytes)
+            return
+        } catch (error: CloudException) {
+            val remoteSize = runCatching { client.remoteSize(path) }.getOrNull()
+            if (remoteSize == bytes.size.toLong()) return
+        }
+        // Вторая попытка: если и она не удастся, ошибка уйдёт наверх.
+        client.upload(path, bytes)
     }
 
     // ------------------------------------------------------------------
@@ -159,8 +194,14 @@ class CloudSync(
         val bytes = client.download(newest.path)
         val count = transfer.importFromText(bytes.toString(Charsets.UTF_8), replaceAll = true)
 
-        // Значки: сначала из архива значков — для тех платежей, где картинки нет.
-        val icons = runCatching { restoreIcons(client, target, onlyMissing = true) }.getOrDefault(0)
+        // Значки: подтягиваем из архива значков — для тех платежей, где картинки нет.
+        val icons = try {
+            restoreIcons(client, target, onlyMissing = true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            0
+        }
 
         settings.setCloudSynced(newest.name, System.currentTimeMillis())
         return CloudPullResult(newest.name, count, icons)

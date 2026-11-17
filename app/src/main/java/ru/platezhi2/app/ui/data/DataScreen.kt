@@ -469,6 +469,12 @@ private fun CloudCard(
                     modifier = Modifier.weight(1f),
                 )
             }
+            Text(
+                text = "Значки-картинки переносятся отдельным архивом, поэтому файл " +
+                    "с платежами остаётся лёгким и уходит на Диск мгновенно.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
                     onClick = onIconsPush,
