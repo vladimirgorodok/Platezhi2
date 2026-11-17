@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import ru.platezhi2.app.data.model.Card
 import ru.platezhi2.app.data.repo.PaymentRepository
 import ru.platezhi2.app.media.ImageScaling
 import ru.platezhi2.app.media.ImageStore
@@ -18,6 +19,9 @@ data class IconEntry(
     val title: String,
     val fileName: String,
     val bytes: ByteArray,
+    /** Подсказки для сопоставления со платежом: число месяца и сумма. */
+    val dueDay: Int = 0,
+    val amountMinor: Long = 0L,
 ) {
     override fun equals(other: Any?): Boolean =
         other is IconEntry && other.title == title && other.fileName == fileName
@@ -41,12 +45,16 @@ object IconArchive {
     /** Собирает архив значков. null — если своих картинок нет. */
     suspend fun build(repo: PaymentRepository, images: ImageStore): ByteArray? =
         withContext(Dispatchers.IO) {
-            val collected = ArrayList<Pair<String, ByteArray>>()
+            val collected = ArrayList<Card>()
+            val pictures = ArrayList<ByteArray>()
             repo.getCards().forEach { card ->
+                // Карточку без названия сопоставить не с чем — пропускаем.
+                if (card.title.isBlank()) return@forEach
                 val raw = images.readBytes(card.imagePath) ?: return@forEach
                 val bytes = ImageScaling.shrink(raw) ?: raw
                 if (bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) return@forEach
-                collected += card.title to bytes
+                collected += card
+                pictures += bytes
             }
             if (collected.isEmpty()) return@withContext null
 
@@ -55,12 +63,14 @@ object IconArchive {
                 put(
                     "icons",
                     JSONArray().apply {
-                        collected.forEachIndexed { index, (title, bytes) ->
+                        collected.forEachIndexed { index, card ->
                             put(
                                 JSONObject().apply {
-                                    put("title", title)
+                                    put("title", card.title)
+                                    put("dueDay", card.dueDay)
+                                    put("amountMinor", card.amountMinor)
                                     put("file", "$DIR$index.img")
-                                    put("size", bytes.size)
+                                    put("size", pictures[index].size)
                                 },
                             )
                         }
@@ -73,7 +83,7 @@ object IconArchive {
                 zip.putNextEntry(ZipEntry(MANIFEST))
                 zip.write(manifest.toString().toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
-                collected.forEachIndexed { index, (_, bytes) ->
+                pictures.forEachIndexed { index, bytes ->
                     zip.putNextEntry(ZipEntry("$DIR$index.img"))
                     zip.write(bytes)
                     zip.closeEntry()
@@ -114,6 +124,8 @@ object IconArchive {
                 title = o.optString("title"),
                 fileName = file.substringAfterLast('/'),
                 bytes = data,
+                dueDay = o.optInt("dueDay", 0),
+                amountMinor = if (o.has("amountMinor")) o.optLong("amountMinor") else 0L,
             )
         }
         return result

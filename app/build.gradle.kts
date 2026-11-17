@@ -17,8 +17,8 @@ android {
         applicationId = "ru.platezhi2.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.14"
+        versionCode = 15
+        versionName = "1.15"
         vectorDrawables { useSupportLibrary = true }
     }
 

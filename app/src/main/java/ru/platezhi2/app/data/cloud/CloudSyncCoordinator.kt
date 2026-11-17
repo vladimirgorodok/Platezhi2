@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.platezhi2.app.data.repo.PaymentRepository
+import ru.platezhi2.app.data.settings.AppSettings
 import ru.platezhi2.app.data.settings.SettingsRepository
 import ru.platezhi2.app.reminders.Reminders
 
@@ -232,13 +233,25 @@ class CloudSyncCoordinator(
             reportFailure(error)
             return
         }
-        if (newest == current.cloudLastFileName) return
+        if (newest == current.cloudLastFileName) {
+            // Данные не менялись, но архив значков мог обновиться отдельно.
+            restoreIconsIfChanged(current)
+            return
+        }
         if (newest == null) {
             // В облаке ещё нет копий — выгружаем свои данные.
             attempt { pushInternal() }.onFailure { reportFailure(it) }
             return
         }
         attempt { pullInternal() }.onFailure { reportFailure(it) }
+    }
+
+    /** Подтягивает значки, если в облаке появился новый архив, а картинок не хватает. */
+    private suspend fun restoreIconsIfChanged(current: AppSettings) {
+        val latest = attempt { sync.newestIconArchiveName() }.getOrNull() ?: return
+        if (latest == current.cloudLastIconsName) return
+        if (!sync.hasMissingIcons()) return
+        attempt { sync.pullIcons(onlyMissing = true) }.onFailure { reportFailure(it) }
     }
 
     private suspend fun pushQuietly() {

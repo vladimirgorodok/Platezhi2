@@ -56,6 +56,8 @@ data class AppSettings(
     val cloudLastFileName: String = "",
     /** Есть несохранённые в облако изменения (в том числе сделанные без интернета). */
     val cloudDirty: Boolean = false,
+    /** Имя архива значков, из которого это устройство уже подтянуло картинки. */
+    val cloudLastIconsName: String = "",
 ) {
     val cloudConfigured: Boolean
         get() = yandexLogin.isNotBlank() && yandexPassword.isNotBlank()
@@ -83,6 +85,7 @@ class SettingsRepository(private val context: Context) {
         val LAST_SYNC_AT = longPreferencesKey("cloud_last_sync_at")
         val LAST_FILE = stringPreferencesKey("cloud_last_file")
         val DIRTY = booleanPreferencesKey("cloud_dirty")
+        val LAST_ICONS = stringPreferencesKey("cloud_last_icons")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -101,6 +104,7 @@ class SettingsRepository(private val context: Context) {
             cloudLastSyncAt = p[Keys.LAST_SYNC_AT] ?: 0L,
             cloudLastFileName = p[Keys.LAST_FILE].orEmpty(),
             cloudDirty = p[Keys.DIRTY] ?: false,
+            cloudLastIconsName = p[Keys.LAST_ICONS].orEmpty(),
         )
     }
 
@@ -163,6 +167,11 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setCloudDirty(dirty: Boolean) {
         context.dataStore.edit { it[Keys.DIRTY] = dirty }
+    }
+
+    /** Запоминает архив значков, из которого картинки уже перенесены на устройство. */
+    suspend fun setCloudIconsRestored(archiveName: String) {
+        context.dataStore.edit { it[Keys.LAST_ICONS] = archiveName }
     }
 }
 

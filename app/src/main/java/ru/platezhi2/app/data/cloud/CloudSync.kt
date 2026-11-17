@@ -229,17 +229,29 @@ class CloudSync(
         val entries = IconArchive.parse(client.download(archive.path))
         if (entries.isEmpty()) return 0
 
-        val byTitle = entries.groupBy { it.title.trim().lowercase(Locale.ROOT) }
+        val byTitle = entries.filter { it.title.isNotBlank() }
+            .groupBy { it.title.trim().lowercase(Locale.ROOT) }
         var restored = 0
         repo.getCards().forEach { card ->
+            val key = card.title.trim().lowercase(Locale.ROOT)
+            if (key.isEmpty()) return@forEach
             if (onlyMissing && images.exists(card.imagePath)) return@forEach
-            val entry = byTitle[card.title.trim().lowercase(Locale.ROOT)]?.firstOrNull() ?: return@forEach
+            val candidates = byTitle[key] ?: return@forEach
+            // Названия совпали — уточняем по числу месяца и сумме.
+            val entry = candidates.firstOrNull {
+                it.dueDay == card.dueDay && it.amountMinor == card.amountMinor
+            } ?: candidates.first()
             val path = images.saveBytes(entry.bytes) ?: return@forEach
             repo.saveCard(card.copy(imagePath = path))
             restored++
         }
+        // Запоминаем архив: повторно тянуть его на этом устройстве уже не нужно.
+        settings.setCloudIconsRestored(archive.name)
         return restored
     }
+
+    /** Есть ли на устройстве платежи без картинки. */
+    suspend fun hasMissingIcons(): Boolean = repo.getCards().any { !images.exists(it.imagePath) }
 
     /** Имя самой свежей копии платежей (null — копий нет). */
     suspend fun newestSnapshotName(): String? = listSnapshots().firstOrNull()?.name

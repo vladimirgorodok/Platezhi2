@@ -60,6 +60,28 @@ class IconArchiveTest {
     }
 
     @Test
+    fun `читает подсказки для сопоставления`() {
+        val archive = zip(
+            IconArchive.MANIFEST to """
+                {"version":1,"icons":[
+                  {"title":"Совкомбанк","dueDay":22,"amountMinor":150000,"file":"icons/0.img","size":1},
+                  {"title":"Халва","file":"icons/1.img","size":1}
+                ]}
+            """.trimIndent().toByteArray(),
+            "icons/0.img" to byteArrayOf(7),
+            "icons/1.img" to byteArrayOf(8),
+        )
+
+        val entries = IconArchive.parse(archive)
+
+        assertEquals(22, entries[0].dueDay)
+        assertEquals(150000L, entries[0].amountMinor)
+        // Старый архив без подсказок читается как раньше.
+        assertEquals(0, entries[1].dueDay)
+        assertEquals(0L, entries[1].amountMinor)
+    }
+
+    @Test
     fun `архив без манифеста пуст`() {
         val archive = zip("icons/0.img" to byteArrayOf(1, 2, 3))
         assertTrue(IconArchive.parse(archive).isEmpty())
