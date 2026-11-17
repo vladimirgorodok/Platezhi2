@@ -24,15 +24,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Пакета "tools" больше нет в репозитории Google, а по умолчанию действие
+      # пытается его поставить и падает. Просим только platform-tools.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
-      # Пакета "tools" больше нет в репозитории Google — ставим только то,
-      # что действительно нужно проекту (compileSdk 34).
+      # Ставим ровно то, что нужно проекту (compileSdk 34).
       - name: Install SDK packages
         run: |
           yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
