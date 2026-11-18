@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import ru.platezhi2.app.data.archive.LocalArchive
 import ru.platezhi2.app.data.repo.PaymentRepository
 import ru.platezhi2.app.data.settings.AppSettings
 import ru.platezhi2.app.data.settings.SettingsRepository
@@ -30,6 +31,7 @@ class CloudSyncCoordinator(
     private val settings: SettingsRepository,
     private val repo: PaymentRepository,
     private val sync: CloudSync,
+    private val archive: LocalArchive,
     private val scope: CoroutineScope,
 ) {
 
@@ -267,6 +269,15 @@ class CloudSyncCoordinator(
     }
 
     private suspend fun pullInternal(): CloudPullResult = mutex.withLock {
+        // Загрузка из облака заменяет все данные, поэтому сначала оставляем
+        // копию на устройстве: из неё всё можно вернуть.
+        try {
+            archive.create()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            // Копия не должна мешать обмену с облаком.
+        }
         // Изменения, которые возникнут при импорте, — это эхо, а не правки пользователя.
         ignoreWritesUntil = System.currentTimeMillis() + IGNORE_WRITES_MS
         val result = sync.pull()

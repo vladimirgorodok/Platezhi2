@@ -29,6 +29,9 @@ class MainActivity : ComponentActivity() {
         val container = (application as Platezhi2App).container
         this.container = container
 
+        // Копия на устройстве всегда не старше последнего запуска приложения.
+        container.localArchive.refreshInBackground()
+
         setContent {
             val settingsFlow = remember { container.settingsRepository.settings }
             val settings by settingsFlow.collectAsState(initial = AppSettings())

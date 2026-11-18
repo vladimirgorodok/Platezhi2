@@ -7,10 +7,13 @@ import kotlinx.coroutines.SupervisorJob
 import ru.platezhi2.app.data.cloud.CloudSync
 import ru.platezhi2.app.data.cloud.CloudSyncCoordinator
 import ru.platezhi2.app.data.db.AppDatabase
+import ru.platezhi2.app.data.archive.ArchiveFiles
+import ru.platezhi2.app.data.archive.LocalArchive
 import ru.platezhi2.app.data.repo.PaymentRepository
 import ru.platezhi2.app.data.settings.SettingsRepository
 import ru.platezhi2.app.data.transfer.TransferManager
 import ru.platezhi2.app.media.ImageStore
+import java.io.File
 
 /** Простой ручной контейнер зависимостей (без DI-фреймворков). */
 class AppContainer(context: Context) {
@@ -32,7 +35,18 @@ class AppContainer(context: Context) {
 
     val imageStore: ImageStore = ImageStore(appContext)
 
-    val transferManager: TransferManager = TransferManager(appContext, paymentRepository, imageStore)
+    val transferManager: TransferManager = TransferManager(paymentRepository, imageStore)
+
+    /**
+     * Архив данных на устройстве: копия платежей вместе со значками.
+     * Живёт в приватной папке приложения, поэтому переживает очистку данных в приложении.
+     */
+    val localArchive: LocalArchive = LocalArchive(
+        files = ArchiveFiles(File(appContext.filesDir, "archive")),
+        transfer = transferManager,
+        repo = paymentRepository,
+        scope = appScope,
+    )
 
     val cloudSync: CloudSync = CloudSync(
         settings = settingsRepository,
@@ -46,6 +60,7 @@ class AppContainer(context: Context) {
         settings = settingsRepository,
         repo = paymentRepository,
         sync = cloudSync,
+        archive = localArchive,
         scope = appScope,
     )
 }

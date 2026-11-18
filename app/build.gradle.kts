@@ -17,8 +17,8 @@ android {
         applicationId = "ru.platezhi2.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.15"
+        versionCode = 16
+        versionName = "1.16"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -85,7 +85,6 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("androidx.documentfile:documentfile:1.0.1")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
 

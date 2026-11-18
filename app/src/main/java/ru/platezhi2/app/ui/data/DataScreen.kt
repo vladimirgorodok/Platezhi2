@@ -3,8 +3,6 @@ package ru.platezhi2.app.ui.data
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,12 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -65,6 +59,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.text.KeyboardOptions
+import ru.platezhi2.app.data.archive.ArchiveFiles
 import ru.platezhi2.app.data.cloud.CloudSyncCoordinator
 import ru.platezhi2.app.data.settings.AppSettings
 import ru.platezhi2.app.ui.AppViewModelProvider
@@ -73,6 +68,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private val syncStampFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
 
@@ -85,31 +81,19 @@ fun DataScreen(
 ) {
     val message by viewModel.message.collectAsState()
     val busy by viewModel.busy.collectAsState()
-    val cloudFolder by viewModel.cloudFolderUri.collectAsState()
-    val backups by viewModel.backups.collectAsState()
+    val archiveInfo by viewModel.archiveInfo.collectAsState()
+    val archivePreviousInfo by viewModel.archivePreviousInfo.collectAsState()
     val cloudSettings by viewModel.cloudSettings.collectAsState()
     val cloudStatus by viewModel.cloudStatus.collectAsState()
     val login by viewModel.login.collectAsState()
     val password by viewModel.password.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    var pendingImport by remember { mutableStateOf<Uri?>(null) }
     var confirmCloudPull by remember { mutableStateOf(false) }
+    var confirmRestore by remember { mutableStateOf(false) }
+    var confirmRestorePrevious by remember { mutableStateOf(false) }
 
-    val createJson = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json"),
-    ) { uri -> uri?.let(viewModel::exportJson) }
-
-    val createCsv = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv"),
-    ) { uri -> uri?.let(viewModel::exportCsv) }
-
-    val openDocument = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri -> if (uri != null) pendingImport = uri }
-
-    val openTree = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
-    ) { uri -> uri?.let(viewModel::setCloudFolder) }
+    // Копия могла обновиться при запуске приложения — показываем свежие сведения.
+    LaunchedEffect(Unit) { viewModel.refreshArchiveInfo() }
 
     LaunchedEffect(message) {
         message?.let {
@@ -170,88 +154,14 @@ fun DataScreen(
                 onIconsRestore = viewModel::restoreIconsFromCloud,
             )
 
-            InfoCard(
-                title = "Экспорт в файл",
-                subtitle = "Сохраните все платежи в файл на устройстве",
-                icon = Icons.Filled.Download,
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = { createJson.launch("platezhi2-backup.json") },
-                        enabled = !busy,
-                        modifier = Modifier.weight(1f),
-                    ) { Text("JSON") }
-                    OutlinedButton(
-                        onClick = { createCsv.launch("platezhi2-backup.csv") },
-                        enabled = !busy,
-                        modifier = Modifier.weight(1f),
-                    ) { Text("CSV") }
-                }
-            }
-
-            InfoCard(
-                title = "Импорт из файла",
-                subtitle = "Загрузите платежи из файла JSON или CSV",
-                icon = Icons.Filled.Upload,
-            ) {
-                Button(
-                    onClick = {
-                        openDocument.launch(
-                            arrayOf(
-                                "application/json",
-                                "text/csv",
-                                "text/comma-separated-values",
-                                "text/plain",
-                                "application/octet-stream",
-                                "*/*",
-                            )
-                        )
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Выбрать файл") }
-            }
-
-            InfoCard(
-                title = "Папка на устройстве",
-                subtitle = cloudFolder?.let { "Папка: ${prettyFolder(it)}" }
-                    ?: "Папка на телефоне или в облаке системы (Google Drive и др.)",
-                icon = Icons.Filled.Folder,
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = { openTree.launch(null) },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (cloudFolder == null) "Выбрать папку" else "Изменить папку")
-                    }
-                    if (cloudFolder != null) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = { viewModel.exportToCloud(json = true) },
-                                enabled = !busy,
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Копия JSON") }
-                            Button(
-                                onClick = { viewModel.exportToCloud(json = false) },
-                                enabled = !busy,
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Копия CSV") }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            TextButton(onClick = { viewModel.loadBackups() }, enabled = !busy) {
-                                Text("Показать копии")
-                            }
-                            TextButton(onClick = { viewModel.clearCloudFolder() }) {
-                                Text("Отвязать папку")
-                            }
-                        }
-                    }
-                }
-            }
+            ArchiveCard(
+                info = archiveInfo,
+                previousInfo = archivePreviousInfo,
+                busy = busy,
+                onCreate = viewModel::createArchive,
+                onRestore = { confirmRestore = true },
+                onRestorePrevious = { confirmRestorePrevious = true },
+            )
 
             Spacer(Modifier.height(20.dp))
         }
@@ -279,54 +189,42 @@ fun DataScreen(
         )
     }
 
-    if (backups.isNotEmpty()) {
+    if (confirmRestore) {
         AlertDialog(
-            onDismissRequest = { viewModel.dismissBackups() },
-            title = { Text("Резервные копии") },
+            onDismissRequest = { confirmRestore = false },
+            title = { Text("Вернуть из копии") },
             text = {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 320.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    backups.forEach { backup ->
-                        TextButton(
-                            onClick = {
-                                viewModel.dismissBackups()
-                                pendingImport = backup.uri
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(backup.name, modifier = Modifier.fillMaxWidth())
-                        }
-                    }
-                }
+                Text(
+                    "Текущие платежи и значки на этом устройстве будут заменены копией" +
+                        (archiveInfo?.let { " от ${formatArchiveStamp(it.at)}" } ?: "") +
+                        ". Состояние до восстановления останется на устройстве.",
+                )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.dismissBackups() }) { Text("Отмена") }
+                TextButton(onClick = {
+                    confirmRestore = false
+                    viewModel.restoreArchive()
+                }) { Text("Вернуть", color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRestore = false }) { Text("Отмена") }
             },
         )
     }
 
-    pendingImport?.let { uri ->
+    if (confirmRestorePrevious) {
         AlertDialog(
-            onDismissRequest = { pendingImport = null },
-            title = { Text("Импорт платежей") },
-            text = { Text("Заменить все текущие платежи данными из файла или добавить их к существующим?") },
+            onDismissRequest = { confirmRestorePrevious = false },
+            title = { Text("Вернуть состояние до восстановления") },
+            text = { Text("Вернуть данные, которые были на устройстве перед последним восстановлением из копии.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.importFile(uri, replaceAll = true)
-                    pendingImport = null
-                }) { Text("Заменить", color = MaterialTheme.colorScheme.primary) }
+                    confirmRestorePrevious = false
+                    viewModel.restorePreviousArchive()
+                }) { Text("Вернуть", color = MaterialTheme.colorScheme.primary) }
             },
             dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        viewModel.importFile(uri, replaceAll = false)
-                        pendingImport = null
-                    }) { Text("Добавить") }
-                    TextButton(onClick = { pendingImport = null }) { Text("Отмена") }
-                }
+                TextButton(onClick = { confirmRestorePrevious = false }) { Text("Отмена") }
             },
         )
     }
@@ -523,6 +421,54 @@ private fun CloudCard(
 }
 
 @Composable
+private fun ArchiveCard(
+    info: ArchiveFiles.Info?,
+    previousInfo: ArchiveFiles.Info?,
+    busy: Boolean,
+    onCreate: () -> Unit,
+    onRestore: () -> Unit,
+    onRestorePrevious: () -> Unit,
+) {
+    InfoCard(
+        title = "Архив на устройстве",
+        subtitle = "Копия платежей и значков на этом телефоне",
+        icon = Icons.Filled.SettingsBackupRestore,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "Копия обновляется сама при запуске приложения и перед загрузкой " +
+                    "из облака. Если что-то пойдёт не так, данные можно вернуть из неё — " +
+                    "даже без интернета.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = info?.let { "Копия: ${formatArchiveSize(it.bytes)}, ${formatArchiveStamp(it.at)}" }
+                    ?: "Копии пока нет",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onCreate,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Сделать копию") }
+                OutlinedButton(
+                    onClick = onRestore,
+                    enabled = !busy && info != null,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Вернуть из копии") }
+            }
+            if (previousInfo != null) {
+                TextButton(onClick = onRestorePrevious, enabled = !busy) {
+                    Text("Вернуть состояние до восстановления")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun InfoCard(
     title: String,
     subtitle: String,
@@ -563,8 +509,12 @@ private fun formatSyncStamp(millis: Long): String =
     LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
         .format(syncStampFormat)
 
-private fun prettyFolder(uriString: String): String {
-    val uri = Uri.parse(uriString)
-    val last = uri.lastPathSegment ?: return uriString
-    return Uri.decode(last).substringAfterLast(':').substringAfterLast('/')
+private fun formatArchiveStamp(millis: Long): String =
+    LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
+        .format(syncStampFormat)
+
+private fun formatArchiveSize(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> String.format(Locale.US, "%.1f МБ", bytes / 1024.0 / 1024.0)
+    bytes >= 1024 -> "${bytes / 1024} КБ"
+    else -> "$bytes Б"
 }

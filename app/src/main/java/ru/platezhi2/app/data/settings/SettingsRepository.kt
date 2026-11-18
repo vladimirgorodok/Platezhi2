@@ -39,7 +39,6 @@ data class AppSettings(
     val themeStyle: ThemeStyle = ThemeStyle.CLASSIC,
     val dynamicColor: Boolean = false,
     val defaultReminderDaysBefore: Int = 1,
-    val cloudFolderUri: String? = null,
     /** Прозрачность иконки-подложки в строке платежа, проценты (90 — почти не видно). */
     val backdropTransparency: Int = 90,
 
@@ -74,7 +73,6 @@ class SettingsRepository(private val context: Context) {
         val THEME_STYLE = stringPreferencesKey("theme_style")
         val DYNAMIC = booleanPreferencesKey("dynamic_color")
         val REMINDER_DAYS = intPreferencesKey("reminder_days")
-        val CLOUD_FOLDER = stringPreferencesKey("cloud_folder")
         val BACKDROP = intPreferencesKey("backdrop_transparency")
 
         val CLOUD_LOGIN = stringPreferencesKey("cloud_login")
@@ -94,7 +92,6 @@ class SettingsRepository(private val context: Context) {
             themeStyle = ThemeStyle.fromKey(p[Keys.THEME_STYLE]),
             dynamicColor = p[Keys.DYNAMIC] ?: false,
             defaultReminderDaysBefore = p[Keys.REMINDER_DAYS] ?: 1,
-            cloudFolderUri = p[Keys.CLOUD_FOLDER],
             backdropTransparency = (p[Keys.BACKDROP] ?: 90).coerceIn(0, 100),
             yandexLogin = p[Keys.CLOUD_LOGIN].orEmpty().trim(),
             yandexPassword = p[Keys.CLOUD_PASSWORD].orEmpty(),
@@ -126,12 +123,6 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDefaultReminderDaysBefore(days: Int) {
         context.dataStore.edit { it[Keys.REMINDER_DAYS] = days }
-    }
-
-    suspend fun setCloudFolderUri(uri: String?) {
-        context.dataStore.edit { prefs ->
-            if (uri == null) prefs.remove(Keys.CLOUD_FOLDER) else prefs[Keys.CLOUD_FOLDER] = uri
-        }
     }
 
     // ---- Яндекс Диск ----

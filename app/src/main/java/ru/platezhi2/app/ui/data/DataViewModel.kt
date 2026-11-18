@@ -1,7 +1,5 @@
 package ru.platezhi2.app.ui.data
 
-import android.content.Intent
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -11,13 +9,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.platezhi2.app.core.AppContainer
+import ru.platezhi2.app.data.archive.ArchiveFiles
 import ru.platezhi2.app.data.cloud.CloudSyncCoordinator
 import ru.platezhi2.app.data.settings.AppSettings
-import ru.platezhi2.app.data.transfer.BackupFile
 import ru.platezhi2.app.reminders.Reminders
 
 class DataViewModel(private val container: AppContainer) : ViewModel() {
@@ -28,14 +25,80 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    private val _backups = MutableStateFlow<List<BackupFile>>(emptyList())
-    val backups: StateFlow<List<BackupFile>> = _backups.asStateFlow()
+    // ------------------------------------------------------------------
+    // Архив на устройстве
+    // ------------------------------------------------------------------
 
-    val cloudFolderUri: StateFlow<String?> = container.settingsRepository.settings
-        .map { it.cloudFolderUri }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    private val _archiveInfo = MutableStateFlow<ArchiveFiles.Info?>(null)
+    val archiveInfo: StateFlow<ArchiveFiles.Info?> = _archiveInfo.asStateFlow()
 
-    // ---- Яндекс Диск ----
+    private val _archivePreviousInfo = MutableStateFlow<ArchiveFiles.Info?>(null)
+    val archivePreviousInfo: StateFlow<ArchiveFiles.Info?> = _archivePreviousInfo.asStateFlow()
+
+    fun refreshArchiveInfo() {
+        viewModelScope.launch { loadArchiveInfo() }
+    }
+
+    /** Копия на устройстве. */
+    fun createArchive() {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { container.localArchive.create(force = true) }
+                .onSuccess { created ->
+                    loadArchiveInfo()
+                    _message.value = if (created) "Копия сохранена на устройстве" else "Сохранять пока нечего"
+                }
+                .onFailure { _message.value = "Не удалось сделать копию: ${it.message}" }
+            _busy.value = false
+        }
+    }
+
+    /** Возврат данных из копии. */
+    fun restoreArchive() {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { container.localArchive.restore() }
+                .onSuccess { restored ->
+                    loadArchiveInfo()
+                    if (restored) {
+                        rescheduleReminders()
+                        _message.value = "Данные возвращены из копии"
+                    } else {
+                        _message.value = "Копии на устройстве нет"
+                    }
+                }
+                .onFailure { _message.value = "Не удалось вернуть данные: ${it.message}" }
+            _busy.value = false
+        }
+    }
+
+    /** Возврат состояния, сохранённого перед последним восстановлением. */
+    fun restorePreviousArchive() {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { container.localArchive.restorePrevious() }
+                .onSuccess { restored ->
+                    loadArchiveInfo()
+                    if (restored) {
+                        rescheduleReminders()
+                        _message.value = "Возвращено состояние до восстановления"
+                    } else {
+                        _message.value = "Такой копии нет"
+                    }
+                }
+                .onFailure { _message.value = "Не удалось вернуть данные: ${it.message}" }
+            _busy.value = false
+        }
+    }
+
+    private suspend fun loadArchiveInfo() {
+        _archiveInfo.value = container.localArchive.info()
+        _archivePreviousInfo.value = container.localArchive.previousInfo()
+    }
+
+    // ------------------------------------------------------------------
+    // Яндекс Диск
+    // ------------------------------------------------------------------
 
     val cloudSettings: StateFlow<AppSettings> = container.settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
@@ -62,106 +125,12 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
                 fieldsLoaded = true
             }
         }
+        viewModelScope.launch { loadArchiveInfo() }
     }
 
     fun clearMessage() {
         _message.value = null
     }
-
-    fun exportJson(uri: Uri) = runExport("JSON") { container.transferManager.exportJson(uri) }
-
-    fun exportCsv(uri: Uri) = runExport("CSV") { container.transferManager.exportCsv(uri) }
-
-    private fun runExport(label: String, block: suspend () -> Unit) {
-        viewModelScope.launch {
-            _busy.value = true
-            runCatching { block() }
-                .onSuccess { _message.value = "Экспорт ($label) выполнен" }
-                .onFailure { _message.value = "Ошибка экспорта: ${it.message}" }
-            _busy.value = false
-        }
-    }
-
-    fun importFile(uri: Uri, replaceAll: Boolean) {
-        viewModelScope.launch {
-            _busy.value = true
-            runCatching { container.transferManager.importFrom(uri, replaceAll) }
-                .onSuccess { count ->
-                    _message.value = if (count > 0) "Импортировано записей: $count"
-                    else "В файле не найдено платежей"
-                    if (count > 0) rescheduleReminders()
-                }
-                .onFailure { _message.value = "Ошибка импорта: ${it.message}" }
-            _busy.value = false
-        }
-    }
-
-    /** Показать список резервных копий в облачной папке. */
-    fun loadBackups() {
-        val tree = cloudFolderUri.value
-        if (tree == null) {
-            _message.value = "Сначала выберите облачную папку"
-            return
-        }
-        viewModelScope.launch {
-            _busy.value = true
-            runCatching { container.transferManager.listBackups(Uri.parse(tree)) }
-                .onSuccess { list ->
-                    _backups.value = list
-                    if (list.isEmpty()) _message.value = "В папке нет резервных копий"
-                }
-                .onFailure { _message.value = "Не удалось прочитать папку: ${it.message}" }
-            _busy.value = false
-        }
-    }
-
-    fun dismissBackups() {
-        _backups.value = emptyList()
-    }
-
-    fun importBackup(backup: BackupFile, replaceAll: Boolean) {
-        _backups.value = emptyList()
-        importFile(backup.uri, replaceAll)
-    }
-
-    fun setCloudFolder(uri: Uri) {
-        viewModelScope.launch {
-            runCatching {
-                container.appContext.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            container.settingsRepository.setCloudFolderUri(uri.toString())
-            _message.value = "Папка для резервных копий сохранена"
-        }
-    }
-
-    fun clearCloudFolder() {
-        viewModelScope.launch {
-            container.settingsRepository.setCloudFolderUri(null)
-            _backups.value = emptyList()
-            _message.value = "Папка отвязана"
-        }
-    }
-
-    fun exportToCloud(json: Boolean) {
-        val tree = cloudFolderUri.value ?: return
-        viewModelScope.launch {
-            _busy.value = true
-            runCatching { container.transferManager.exportToFolder(Uri.parse(tree), json) }
-                .onSuccess { uri ->
-                    _message.value = if (uri != null) "Резервная копия сохранена в облаке"
-                    else "Не удалось создать файл в папке"
-                }
-                .onFailure { _message.value = "Ошибка экспорта: ${it.message}" }
-            _busy.value = false
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Яндекс Диск
-    // ------------------------------------------------------------------
 
     fun setLogin(value: String) {
         _login.value = value
@@ -215,25 +184,6 @@ class DataViewModel(private val container: AppContainer) : ViewModel() {
             // Сама проверка идёт в общем скоупе приложения: уход с экрана её не отменит.
             container.cloudCoordinator.checkInBackground(loginValue, passwordValue, folder)
         }
-    }
-
-    /** Список копий платежей в облаке (для диалога «что загружать»). */
-    private val _cloudSnapshots = MutableStateFlow(emptyList<ru.platezhi2.app.data.cloud.RemoteEntry>())
-    val cloudSnapshots: StateFlow<List<ru.platezhi2.app.data.cloud.RemoteEntry>> =
-        _cloudSnapshots.asStateFlow()
-
-    fun loadCloudSnapshots() {
-        viewModelScope.launch {
-            val result = container.cloudCoordinator.loadSnapshots()
-            result.onSuccess { list ->
-                _cloudSnapshots.value = list
-                if (list.isEmpty()) _message.value = "В облачной папке нет копий"
-            }.onFailure { _message.value = it.message ?: "Не удалось прочитать папку" }
-        }
-    }
-
-    fun dismissCloudSnapshots() {
-        _cloudSnapshots.value = emptyList()
     }
 
     // Обмен с облаком идёт в общем скоупе приложения: уход с экрана его не отменит.

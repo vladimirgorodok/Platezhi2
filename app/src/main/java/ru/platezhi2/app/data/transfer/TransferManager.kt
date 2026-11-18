@@ -1,8 +1,5 @@
 package ru.platezhi2.app.data.transfer
 
-import android.content.Context
-import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -11,29 +8,22 @@ import ru.platezhi2.app.core.DueDates
 import ru.platezhi2.app.core.Format
 import ru.platezhi2.app.data.model.Card
 import ru.platezhi2.app.data.model.Payment
-import ru.platezhi2.app.data.model.Recurrence
 import ru.platezhi2.app.data.repo.PaymentRepository
 import ru.platezhi2.app.media.ImageScaling
 import ru.platezhi2.app.media.ImageStore
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import java.util.Base64
 
-/** Файл резервной копии в облачной папке. */
-data class BackupFile(val name: String, val uri: Uri, val modified: Long)
-
 /**
- * Экспорт и импорт данных.
+ * Копии данных: текст для облака и архива на устройстве плюс импорт из текста.
  *
  * Данные состоят из двух частей: карточки платежей и история оплат по ним.
  * Поддерживается импорт:
  *  - JSON собственного формата (карточки + вложенная история оплат);
  *  - JSON предыдущей версии (плоский список карточек);
- *  - CSV собственного формата (разделитель «;», история — в отдельной колонке);
- *  - CSV старого приложения «Платежи» (разбор — в [ImportParser]).
+ *  - CSV собственного формата и CSV старого приложения «Платежи» ([ImportParser]).
  */
 class TransferManager(
-    private val context: Context,
     private val repo: PaymentRepository,
     private val images: ImageStore,
 ) {
@@ -43,53 +33,26 @@ class TransferManager(
 
         /** Больше этой картинки в копию не встраиваем (иначе копия станет огромной). */
         private const val MAX_IMAGE_BYTES = 3 * 1024 * 1024
-
-        private val HEADER = listOf(
-            "Название", "Сумма", "Число месяца", "Месяц", "Повтор", "Значок",
-            "Напоминание", "Напомнить за (дней)", "Время", "Заметка", "История оплат",
-        )
-
-        private val LEGACY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     }
 
     // ------------------------------------------------------------------
     // Экспорт
     // ------------------------------------------------------------------
 
-    suspend fun exportJson(uri: Uri) = writeText(uri, buildJsonText(includeImages = true))
+    /**
+     * Текст копии для облака.
+     *
+     * Значки-картинки в него не вшиваются: для них есть отдельный архив значков.
+     * Так файл данных остаётся совсем маленьким и уходит на Диск мгновенно даже
+     * на слабом мобильном интернете.
+     */
+    suspend fun snapshotJson(): String = buildJsonText(includeImages = false)
 
-    suspend fun exportCsv(uri: Uri) = writeText(uri, buildCsvText())
-
-    /** Экспорт в выбранную облачную папку. Возвращает созданный файл. */
-    suspend fun exportToFolder(treeUri: Uri, json: Boolean): Uri? = withContext(Dispatchers.IO) {
-        val dir = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext null
-        val stamp = LocalDate.now().toString()
-        val name = "platezhi2-$stamp.${if (json) "json" else "csv"}"
-        val mime = if (json) "application/json" else "text/csv"
-        val file = dir.createFile(mime, name) ?: return@withContext null
-        val text = if (json) buildJsonText(includeImages = true) else buildCsvText()
-        context.contentResolver.openOutputStream(file.uri, "wt")
-            ?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-        file.uri
-    }
-
-    /** Резервные копии в выбранной облачной папке, свежие — первыми. */
-    suspend fun listBackups(treeUri: Uri): List<BackupFile> = withContext(Dispatchers.IO) {
-        val dir = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext emptyList()
-        dir.listFiles()
-            .filter { file ->
-                val name = file.name.orEmpty()
-                file.isFile && (name.endsWith(".json", true) || name.endsWith(".csv", true))
-            }
-            .sortedByDescending { it.lastModified() }
-            .map { BackupFile(it.name.orEmpty(), it.uri, it.lastModified()) }
-    }
-
-    private suspend fun writeText(uri: Uri, text: String) = withContext(Dispatchers.IO) {
-        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
-            out.write(text.toByteArray(Charsets.UTF_8))
-        } ?: error("Не удалось открыть файл для записи")
-    }
+    /**
+     * Текст копии для архива на устройстве. Значки вшиваются: копия должна быть
+     * полной, чтобы данные вернулись даже без Яндекс Диска.
+     */
+    suspend fun archiveJson(): String = buildJsonText(includeImages = true)
 
     private suspend fun buildJsonText(includeImages: Boolean): String {
         val cards = repo.getCards()
@@ -104,15 +67,6 @@ class TransferManager(
         )
         return root.toString(2)
     }
-
-    /**
-     * Текст копии для облака.
-     *
-     * Значки-картинки в него не вшиваются: для них есть отдельный архив значков.
-     * Так файл данных остаётся совсем маленьким и уходит на Диск мгновенно даже
-     * на слабом мобильном интернете.
-     */
-    suspend fun snapshotJson(): String = buildJsonText(includeImages = false)
 
     private suspend fun cardJson(
         card: Card,
@@ -130,7 +84,7 @@ class TransferManager(
         put("reminderDaysBefore", card.reminderDaysBefore)
         put("reminderHour", card.reminderHour)
         put("reminderMinute", card.reminderMinute)
-        // В файл для пользователя значок-картинку вшиваем: иначе он не перенёсся бы
+        // В копию на устройстве значок-картинку вшиваем: иначе он не перенёсся бы
         // на другое устройство (там нет файла по этому пути). В облачную копию —
         // нет: значки идут отдельным архивом.
         if (includeImages) {
@@ -155,59 +109,11 @@ class TransferManager(
         )
     }
 
-    private suspend fun buildCsvText(): String {
-        val cards = repo.getCards()
-        val byCard = repo.getPayments().groupBy { it.cardId }
-        val sb = StringBuilder()
-        sb.append(BOM)
-        sb.append(HEADER.joinToString(";")).append('\n')
-        cards.forEach { card ->
-            val history = byCard[card.id].orEmpty().sortedBy { it.paidAtEpochDay }
-            val row = listOf(
-                card.title,
-                amountToText(card.amountMinor),
-                card.dueDay.toString(),
-                card.dueMonth.toString(),
-                recurrenceToText(card.recurrence),
-                card.icon,
-                if (card.reminderEnabled) "да" else "нет",
-                card.reminderDaysBefore.toString(),
-                "%02d:%02d".format(card.reminderHour, card.reminderMinute),
-                card.note,
-                history.joinToString("|") { payment ->
-                    val date = LocalDate.ofEpochDay(payment.paidAtEpochDay).format(LEGACY_DATE)
-                    "$date=${amountToText(payment.amountMinor)}"
-                },
-            )
-            sb.append(row.joinToString(";") { escape(it) }).append('\n')
-        }
-        return sb.toString()
-    }
-
-    private fun amountToText(minor: Long): String {
-        val rub = minor / 100
-        val kop = minor % 100
-        return if (kop == 0L) rub.toString() else "$rub.${kop.toString().padStart(2, '0')}"
-    }
-
     // ------------------------------------------------------------------
     // Импорт
     // ------------------------------------------------------------------
 
-    /**
-     * Импортирует данные, распознавая формат автоматически.
-     * Возвращает число добавленных карточек.
-     */
-    suspend fun importFrom(uri: Uri, replaceAll: Boolean): Int {
-        val raw = withContext(Dispatchers.IO) {
-            context.contentResolver.openInputStream(uri)?.use {
-                it.readBytes().toString(Charsets.UTF_8)
-            } ?: error("Не удалось прочитать файл")
-        }
-        return importFromText(raw, replaceAll)
-    }
-
-    /** Импорт из готового текста копии (файл уже прочитан или данные пришли из облака). */
+    /** Импорт из готового текста копии (данные из облака или из архива на устройстве). */
     suspend fun importFromText(raw: String, replaceAll: Boolean): Int = withContext(Dispatchers.IO) {
         val text = raw.removePrefix(BOM).trim()
         if (text.isEmpty()) error("Файл пуст")
@@ -247,8 +153,6 @@ class TransferManager(
         val cards = toInsert.map { it.card }
         if (replaceAll) repo.replaceAll(cards, buildPayments) else repo.appendAll(cards, buildPayments)
     }
-
-    // ---------- JSON ----------
 
     private suspend fun parseJson(text: String): List<ImportParser.ParsedCard> {
         val array = if (text.startsWith("{")) {
@@ -328,15 +232,4 @@ class TransferManager(
     }
 
     private fun amountToMinor(text: String): Long = Format.parseAmountToMinor(text) ?: 0L
-
-    private fun recurrenceToText(recurrence: Recurrence): String = when (recurrence) {
-        Recurrence.NONE -> "Не повторять"
-        Recurrence.MONTHLY -> "Ежемесячно"
-        Recurrence.YEARLY -> "Ежегодно"
-    }
-
-    private fun escape(value: String): String =
-        if (value.contains(';') || value.contains('\n') || value.contains('"')) {
-            "\"" + value.replace("\"", "\"\"") + "\""
-        } else value
 }
