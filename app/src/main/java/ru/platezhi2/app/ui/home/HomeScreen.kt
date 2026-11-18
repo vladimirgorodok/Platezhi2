@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -63,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.platezhi2.app.core.Format
 import ru.platezhi2.app.ui.AppViewModelProvider
+import ru.platezhi2.app.ui.adapt.isWideScreen
 import ru.platezhi2.app.ui.components.PaymentBackdrop
 import ru.platezhi2.app.ui.components.PaymentIcon
 import ru.platezhi2.app.ui.theme.LocalAppPalette
@@ -150,48 +153,85 @@ fun HomeScreen(
             )
         },
     ) { padding ->
-        if (state.cardCount == 0) {
-            EmptyState(modifier = Modifier.padding(padding))
-        } else {
-            LazyColumn(
+        // Строки списка одинаковы в обычном и в альбомном виде.
+        val rowsContent: LazyListScope.() -> Unit = {
+            if (state.rows.isEmpty()) {
+                item { EmptyMonth(isCurrentMonth = state.isCurrentMonth) }
+            }
+
+            if (overdue.isNotEmpty()) {
+                item { SectionHeader("Просрочено", palette.danger) }
+                items(overdue, key = { it.card.id }) { row -> renderRow(row) }
+            }
+
+            if (upcoming.isNotEmpty()) {
+                item { SectionHeader("К оплате", palette.accent) }
+                items(upcoming, key = { it.card.id }) { row -> renderRow(row) }
+            }
+
+            if (paidRows.isNotEmpty()) {
+                item { SectionHeader("Оплачено", palette.success) }
+                items(paidRows, key = { it.card.id }) { row -> renderRow(row) }
+            }
+        }
+
+        val banner: @Composable () -> Unit = {
+            OverviewBanner(
+                month = state.month,
+                isCurrentMonth = state.isCurrentMonth,
+                totalUnpaid = state.totalUnpaid,
+                totalPaid = state.totalPaid,
+                unpaidCount = state.unpaidCount,
+                overdueCount = state.overdueCount,
+                onPreviousMonth = viewModel::previousMonth,
+                onNextMonth = viewModel::nextMonth,
+                onCurrentMonth = viewModel::currentMonth,
+            )
+        }
+
+        when {
+            state.cardCount == 0 -> EmptyState(modifier = Modifier.padding(padding))
+
+            // Альбомный вид (планшет или телефон на боку): сводка по месяцу слева,
+            // список платежей справа — ширина экрана используется целиком.
+            isWideScreen() -> Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(340.dp)
+                        .fillMaxHeight()
+                        .padding(start = 16.dp, end = 10.dp, top = 4.dp, bottom = 24.dp),
+                ) {
+                    banner()
+                }
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentPadding = PaddingValues(
+                        start = 10.dp,
+                        end = 16.dp,
+                        top = 4.dp,
+                        bottom = 32.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    rowsContent()
+                }
+            }
+
+            else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item {
-                    OverviewBanner(
-                        month = state.month,
-                        isCurrentMonth = state.isCurrentMonth,
-                        totalUnpaid = state.totalUnpaid,
-                        totalPaid = state.totalPaid,
-                        unpaidCount = state.unpaidCount,
-                        overdueCount = state.overdueCount,
-                        onPreviousMonth = viewModel::previousMonth,
-                        onNextMonth = viewModel::nextMonth,
-                        onCurrentMonth = viewModel::currentMonth,
-                    )
-                }
-
-                if (state.rows.isEmpty()) {
-                    item { EmptyMonth(isCurrentMonth = state.isCurrentMonth) }
-                }
-
-                if (overdue.isNotEmpty()) {
-                    item { SectionHeader("Просрочено", palette.danger) }
-                    items(overdue, key = { it.card.id }) { row -> renderRow(row) }
-                }
-
-                if (upcoming.isNotEmpty()) {
-                    item { SectionHeader("К оплате", palette.accent) }
-                    items(upcoming, key = { it.card.id }) { row -> renderRow(row) }
-                }
-
-                if (paidRows.isNotEmpty()) {
-                    item { SectionHeader("Оплачено", palette.success) }
-                    items(paidRows, key = { it.card.id }) { row -> renderRow(row) }
-                }
+                item { banner() }
+                rowsContent()
             }
         }
     }

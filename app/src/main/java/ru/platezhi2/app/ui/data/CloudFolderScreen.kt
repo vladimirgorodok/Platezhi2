@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.platezhi2.app.ui.AppViewModelProvider
 import ru.platezhi2.app.ui.theme.LocalAppPalette
+import ru.platezhi2.app.ui.adapt.contentSidePadding
 
 /** Выбор папки на Яндекс Диске, в которой будет лежать синхронизация. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,7 +86,7 @@ fun CloudFolderScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = contentSidePadding()),
         ) {
             Text(
                 text = state.path,

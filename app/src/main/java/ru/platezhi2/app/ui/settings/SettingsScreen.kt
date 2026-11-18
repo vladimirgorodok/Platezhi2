@@ -58,6 +58,7 @@ import ru.platezhi2.app.data.settings.ThemeStyle
 import ru.platezhi2.app.ui.AppViewModelProvider
 import ru.platezhi2.app.ui.theme.accentColor
 import ru.platezhi2.app.ui.theme.secondaryColor
+import ru.platezhi2.app.ui.adapt.contentSidePadding
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,7 +91,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = contentSidePadding()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             SettingsCard(title = "Оформление", icon = Icons.Filled.Palette) {

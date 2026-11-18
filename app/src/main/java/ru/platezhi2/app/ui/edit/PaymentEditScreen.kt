@@ -75,6 +75,7 @@ import ru.platezhi2.app.ui.AppViewModelProvider
 import ru.platezhi2.app.ui.components.PaymentIcon
 import ru.platezhi2.app.ui.theme.LocalAppPalette
 import java.time.LocalDate
+import ru.platezhi2.app.ui.adapt.contentSidePadding
 
 private val MONTHS = listOf(
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -135,7 +136,7 @@ fun PaymentEditScreen(
                 .verticalScroll(rememberScrollState())
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = contentSidePadding()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             // ---- Иконка ----

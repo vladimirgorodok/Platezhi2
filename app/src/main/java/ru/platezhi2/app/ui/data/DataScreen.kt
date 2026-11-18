@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -69,6 +70,8 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import ru.platezhi2.app.ui.adapt.contentSidePadding
+import ru.platezhi2.app.ui.adapt.isWideScreen
 
 private val syncStampFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
 
@@ -130,38 +133,53 @@ fun DataScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = contentSidePadding()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            CloudCard(
-                settings = cloudSettings,
-                login = login,
-                password = password,
-                status = cloudStatus,
-                busy = busy,
-                onLogin = viewModel::setLogin,
-                onPassword = viewModel::setPassword,
-                onCheck = viewModel::checkCloudConnection,
-                onPickFolder = {
-                    viewModel.flushCredentials()
-                    onPickCloudFolder()
-                },
-                onAutoSync = viewModel::setAutoSync,
-                onKeepCopies = viewModel::setKeepCopies,
-                onPush = viewModel::pushToCloud,
-                onPull = { confirmCloudPull = true },
-                onIconsPush = viewModel::pushIconsToCloud,
-                onIconsRestore = viewModel::restoreIconsFromCloud,
-            )
+            val cloudCard: @Composable () -> Unit = {
+                CloudCard(
+                    settings = cloudSettings,
+                    login = login,
+                    password = password,
+                    status = cloudStatus,
+                    busy = busy,
+                    onLogin = viewModel::setLogin,
+                    onPassword = viewModel::setPassword,
+                    onCheck = viewModel::checkCloudConnection,
+                    onPickFolder = {
+                        viewModel.flushCredentials()
+                        onPickCloudFolder()
+                    },
+                    onAutoSync = viewModel::setAutoSync,
+                    onKeepCopies = viewModel::setKeepCopies,
+                    onPush = viewModel::pushToCloud,
+                    onPull = { confirmCloudPull = true },
+                    onIconsPush = viewModel::pushIconsToCloud,
+                    onIconsRestore = viewModel::restoreIconsFromCloud,
+                )
+            }
 
-            ArchiveCard(
-                info = archiveInfo,
-                previousInfo = archivePreviousInfo,
-                busy = busy,
-                onCreate = viewModel::createArchive,
-                onRestore = { confirmRestore = true },
-                onRestorePrevious = { confirmRestorePrevious = true },
-            )
+            val archiveCard: @Composable () -> Unit = {
+                ArchiveCard(
+                    info = archiveInfo,
+                    previousInfo = archivePreviousInfo,
+                    busy = busy,
+                    onCreate = viewModel::createArchive,
+                    onRestore = { confirmRestore = true },
+                    onRestorePrevious = { confirmRestorePrevious = true },
+                )
+            }
+
+            if (isWideScreen()) {
+                // Альбомный вид: две колонки вместо одной длинной.
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.weight(1f)) { cloudCard() }
+                    Box(Modifier.weight(1f)) { archiveCard() }
+                }
+            } else {
+                cloudCard()
+                archiveCard()
+            }
 
             Spacer(Modifier.height(20.dp))
         }
